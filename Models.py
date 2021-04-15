@@ -13,7 +13,7 @@ from tqdm import tqdm
 
 
 class MLP(nn.Module):
-    def __init__(self,list_hidden_layer,input_size,output_size,batch_size,lr,epoch,device='cpu'):
+    def __init__(self,list_hidden_layer,input_size,output_size,batch_size,lr,epoch,droprates,reguralization={'l1':0,'l2':0},device='cpu'):
         super().__init__()
         self.input_size=input_size
         self.list_layer = list_hidden_layer
@@ -22,10 +22,13 @@ class MLP(nn.Module):
         self.epoch=epoch
         self.batch_size=batch_size
         self.lr=lr
+        self.droprates=droprates
+        self.reguralization=reguralization
 
         self.device=device
         
         hasil=[]
+        hasil+=([nn.Dropout(p=droprates)])
         
         for i,num_layer in enumerate(list_hidden_layer):
             if i ==0:
@@ -48,7 +51,7 @@ class MLP(nn.Module):
         self.to(self.device)
 
         criterion = torch.nn.BCELoss()
-        optimizer = torch.optim.Adam(self.parameters(),betas=(0.9, 0.999), lr =self.lr)
+        optimizer = torch.optim.Adam(self.parameters(),betas=(0.9, 0.999), lr =self.lr,weight_decay=self.reguralization['l2'])
 
         for data in trainloader:
             # get the inputs; data is a list of [inputs, labels]
@@ -60,7 +63,18 @@ class MLP(nn.Module):
 
             # forward + backward + optimize
             outputs = self.forward(inputs)
+            reg_loss = 0
+            factor=0
+
+            if self.reguralization['l1']>0:
+                l1_crit = nn.L1Loss(size_average=False)
+                for param in self.parameters():
+                    reg_loss += l1_crit(param,target=torch.zeros_like(param))
+
+                factor = self.reguralization['l1']
+
             loss = criterion(outputs, labels)
+            loss += factor * reg_loss
             loss.backward()
             optimizer.step()
         self.loss = loss
