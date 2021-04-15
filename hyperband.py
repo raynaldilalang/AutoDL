@@ -5,19 +5,38 @@ import math
 from itertools import product
 from scipy.stats import *
 
+from sklearn.linear_model import LogisticRegression, LinearRegression
+from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from catboost import CatBoostClassifier
+from xgboost import XGBClassifier, XGBRegressor
+from sklearn.model_selection import StratifiedKFold, GridSearchCV, train_test_split, cross_val_score
+from sklearn.metrics import *
+from numpy.random import default_rng
+
+import multiprocessing
+from multiprocessing import Pool
+
 
 class HyperBandSearchCV:
     def __init__(self, estimator, search_spaces,
                  scoring, max_epochs, factor=3,
-                 cv=1, random_state=420):
+                 cv=1, random_state=420,
+                 n_jobs=1):
         self.estimator = estimator
         self.search_spaces = search_spaces
         self.scoring = scoring
         self.max_epochs = max_epochs
         self.factor = factor
+        self.cv = cv
         self.random_state = random_state
-        self.max_rounds = math.log(max_epochs, factor)
+        self.max_rounds = math.floor(math.log(max_epochs, factor))
         self.total_epochs = (self.max_rounds + 1) * max_epochs
+
+        self.n_jobs = n_jobs
+
+    def get_score(self, value):
+        return cross_val_score(**value).mean()
 
     @staticmethod
     def create_cat_combinations(dict_hparam):
@@ -40,17 +59,17 @@ class HyperBandSearchCV:
     @staticmethod
     def get_hyperparameter_configuration(cat_hparam, num_hparam, combinations, n, random_state=420):
         np.random.seed(seed=random_state)
-        population = dict.fromkeys(range(n))
+        configuration = dict.fromkeys(range(n))
         for ind in range(n):
-            population[ind] = {'hparams': None}
-            population[ind]['hparams'] = dict.fromkeys(
+            configuration[ind] = {'hparams': None}
+            configuration[ind]['hparams'] = dict.fromkeys(
                 [*cat_hparam.keys(), *num_hparam.keys()])
 
             if len(cat_hparam):
                 cat_combination_num = random.randint(
                     0, len(combinations)-1)
                 for hparam in cat_hparam.keys():
-                    population[ind]['hparams'][hparam] = combinations.loc[cat_combination_num, hparam]
+                    configuration[ind]['hparams'][hparam] = combinations.loc[cat_combination_num, hparam]
 
             if len(num_hparam):
                 for hparam in num_hparam.keys():
@@ -58,40 +77,43 @@ class HyperBandSearchCV:
                         try:
                             distribution = eval(
                                 num_hparam[hparam][2].replace("-", ""))
-                            population[ind]['hparams'][hparam] = distribution.rvs(
+                            configuration[ind]['hparams'][hparam] = distribution.rvs(
                                 num_hparam[hparam][0], num_hparam[hparam][1]-num_hparam[hparam][0])
                         except NameError:
                             print(
                                 f'WARNING: Distribution {num_hparam[hparam][2]} not found, generating random number uniformly.')
                             if (type(num_hparam[hparam][0]) == int) and (type(num_hparam[hparam][1]) == int):
-                                population[ind]['hparams'][hparam] = randint.rvs(
+                                configuration[ind]['hparams'][hparam] = randint.rvs(
                                     num_hparam[hparam][0], num_hparam[hparam][1]+1)
                             else:
-                                population[ind]['hparams'][hparam] = uniform.rvs(
+                                configuration[ind]['hparams'][hparam] = uniform.rvs(
                                     num_hparam[hparam][0], num_hparam[hparam][1]-num_hparam[hparam][0])
                     else:
                         if (type(num_hparam[hparam][0]) == int) and (type(num_hparam[hparam][1]) == int):
-                            population[ind]['hparams'][hparam] = randint.rvs(
+                            configuration[ind]['hparams'][hparam] = randint.rvs(
                                 num_hparam[hparam][0], num_hparam[hparam][1]+1)
                         else:
-                            population[ind]['hparams'][hparam] = uniform.rvs(
+                            configuration[ind]['hparams'][hparam] = uniform.rvs(
                                 num_hparam[hparam][0], num_hparam[hparam][1]-num_hparam[hparam][0])
 
-            population[ind]['isTrained'] = False
+            configuration[ind]['isTrained'] = False
 
-        return population
+        return configuration
 
     def create_brackets(self):
         brackets = dict.fromkeys(range(self.max_rounds + 1))
         for bracket_num in brackets:
-            n = ceil(
+            n = math.ceil(
                 (self.total_epochs/self.max_epochs) *
                 (self.factor**bracket_num/(bracket_num+1))
             )
             r = self.max_epochs * self.factor**(-bracket_num)
-            brackets[bracket_num] = dict.fromkeys(range(bracket_num))
-            for i in range(bracket_num):
-                brackets[bracket_num][i]['ni'] = floor(n * self.factor**(-i))
+            brackets[bracket_num] = dict.fromkeys(range(bracket_num + 1))
+            for i in range(bracket_num + 1):
+                brackets[bracket_num][i] = dict.fromkeys(
+                    ['ni', 'ri', 'contenders'])
+                brackets[bracket_num][i]['ni'] = math.floor(
+                    n * self.factor**(-i))
                 brackets[bracket_num][i]['ri'] = r * self.factor**i
                 brackets[bracket_num][i]['contenders'] = dict.fromkeys(
                     range(brackets[bracket_num][i]['ni']))
@@ -101,49 +123,96 @@ class HyperBandSearchCV:
     @staticmethod
     def create_model(model_name, random_state, epoch, **hparams):
         try:
-            model = eval(f'{model_name}')(
-                **hparams, epoch=epoch, random_state=random_state)
-        except TypeError:
             model = eval(f'{model_name}')(**hparams, epoch=epoch)
+        except:
+            try:
+                model = eval(f'{model_name}')(**hparams, max_iter=epoch)
+            except:
+                model = eval(f'{model_name}')(**hparams, max_depth=epoch)
 
         return model
-    
+
     @staticmethod
-    def top_k(bracket_round, k):
-        configurations = pd.from_dict(bracket_round, orient='index')
+    def get_top_k(bracket_round, k):
+        configurations = pd.DataFrame.from_dict(bracket_round, orient='index')
         configurations = configurations.sort_values(
             ['score'], ascending=False).reset_index(drop=True).head(k)
-        configurations = pd.to_dict(configurations, orient='index')
-        
+        configurations = configurations.to_dict(orient='index')
+
         return configurations
-        
+
+    def fit_multiple(self, X, y, configurations, bracket_num, i):
+        list_toTrain_model = []
+        for contender in range(self.brackets[bracket_num][i]['ni']):
+            self.brackets[bracket_num][i]['contenders'][contender] = dict.fromkeys(['hparams', 'score'])
+            self.brackets[bracket_num][i]['contenders'][contender]['hparams'] = configurations[bracket_num][contender]['hparams']
+            model = self.create_model(
+                self.estimator,
+                random_state=self.random_state,
+                epoch=self.brackets[bracket_num][i]['ri'],
+                **configurations[bracket_num][contender]['hparams']
+            )
+            list_toTrain_model.append({
+                'estimator': model,
+                'X': X, 'y': y,
+                'scoring': self.scoring,
+                'cv': self.cv,
+                'n_jobs': self.cv
+            })
+
+        p = Pool(self.n_jobs)
+        print(f'Starting multiprocess ({self.n_jobs})')
+        with p:
+            list_toTrain_score = p.map(self.get_score, list_toTrain_model)
+
+        for contender in range(self.brackets[bracket_num][i]['ni']):
+            self.brackets[bracket_num][i]['contenders'][contender]['score'] = list_toTrain_score[contender]
+
     def fit(self, X, y):
+        print(f'HyperBand on {self.estimator}')
+        self.create_brackets()
         cat_hparam, num_hparam, combinations = self.create_cat_combinations(
             self.search_spaces)
-        for bracket_num in self.brackets:
-            n = ceil(
+        configurations = dict.fromkeys(range(self.max_rounds + 1))
+        for bracket_num in range(self.max_rounds, -1, -1):
+            n = math.ceil(
                 (self.total_epochs/self.max_epochs) *
                 (self.factor**bracket_num/(bracket_num+1))
             )
-            configurations = self.get_hyperparameter_configuration(
+            configurations[bracket_num] = self.get_hyperparameter_configuration(
                 cat_hparam, num_hparam, combinations, n)
-            for i in range(bracket_num):
-                for contender in range(brackets[bracket_num][i]['ni']):
-                    self.brackets[bracket_num][i]['contenders'][contender] = dict.fromkeys(['hparams', 'score'])
-                    self.brackets[bracket_num][i]['contenders'][contender]['hparam'] = configurations[i]
-                    model = create_model(
-                        'MLP',
-                        random_state=420,
-                        epoch=self.brackets[bracket_num][i]['ri'],
-                        **configurations[i]
-                    )
-                    self.brackets[bracket_num][i]['contenders'][contender]['score'] = cross_val_score_torch(
-                        model, X, y,
-                        scoring=self.scoring,
-                        device=self.device,
-                        cv=self.cv
-                    )
-                configurations = top_k(
+            for i in range(bracket_num + 1):
+                print('Bracket', str(bracket_num)+'.'+str(i))
+                # for contender in range(self.brackets[bracket_num][i]['ni']):
+                    # self.brackets[bracket_num][i]['contenders'][contender] = dict.fromkeys([
+                    #                                                                        'hparams', 'score'])
+                    # self.brackets[bracket_num][i]['contenders'][contender]['hparams'] = configurations[bracket_num][contender]['hparams']
+                    # model = self.create_model(
+                    #     self.estimator,
+                    #     random_state=self.random_state,
+                    #     epoch=self.brackets[bracket_num][i]['ri'],
+                    #     **configurations[bracket_num][contender]['hparams']
+                    # )
+                    # self.brackets[bracket_num][i]['contenders'][contender]['score'] = cross_val_score(
+                    #     model, X, y,
+                    #     scoring=self.scoring,
+                    #     cv=self.cv
+                    # ).mean()
+                
+                self.fit_multiple(X, y, configurations, bracket_num, i)
+
+                configurations[bracket_num] = self.get_top_k(
                     self.brackets[bracket_num][i]['contenders'],
-                    k=floor(brackets[bracket_num][i]['ni']/self.factor)
+                    k=max(math.floor(
+                        self.brackets[bracket_num][i]['ni']/self.factor), 1)
                 )
+            configurations[bracket_num] = configurations[bracket_num][0]
+            print(f'Best of bracket {bracket_num}:',
+                  configurations[bracket_num])
+
+        best_config = pd.DataFrame.from_dict(configurations, orient='index')
+        best_config = best_config.sort_values(
+            ['score'], ascending=False).reset_index(drop=True).loc[0, :]
+
+        self.best_params_ = best_config['hparams']
+        self.best_score_ = best_config['score']
