@@ -13,7 +13,7 @@ from tqdm import tqdm
 
 
 class MLP(nn.Module):
-    def __init__(self, list_hidden_layer, input_size, output_size, batch_size, lr, epoch, droprates, reguralization={'l1': 0, 'l2': 0}, device='cpu'):
+    def __init__(self, list_hidden_layer, input_size, output_size, batch_size, epoch, lr=1e-3, droprates=0, reguralization={'l1': 0, 'l2': 0}, batch_norm=0, device='cpu'):
         super().__init__()
         self.input_size = input_size
         self.list_layer = list_hidden_layer
@@ -29,6 +29,8 @@ class MLP(nn.Module):
 
         hasil = []
         hasil += ([nn.Dropout(p=droprates)])
+        if batchnorm:
+            hasil += ([nn.BatchNorm1d(input_size)])
 
         for i, num_layer in enumerate(list_hidden_layer):
             if i == 0:

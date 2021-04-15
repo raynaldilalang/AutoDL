@@ -5,18 +5,20 @@ import math
 from itertools import product
 from scipy.stats import *
 
-from sklearn.linear_model import LogisticRegression, LinearRegression
-from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-from catboost import CatBoostClassifier
-from xgboost import XGBClassifier, XGBRegressor
-from sklearn.model_selection import StratifiedKFold, GridSearchCV, train_test_split, cross_val_score
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+from torch.utils.data import Dataset, TensorDataset, DataLoader
+
+from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.metrics import *
 from numpy.random import default_rng
 
 import multiprocessing
 from multiprocessing import Pool
 
+import Models
 
 class HyperBandSearchCV:
     def __init__(self, estimator, search_spaces,
@@ -182,23 +184,7 @@ class HyperBandSearchCV:
             configurations[bracket_num] = self.get_hyperparameter_configuration(
                 cat_hparam, num_hparam, combinations, n)
             for i in range(bracket_num + 1):
-                print('Bracket', str(bracket_num)+'.'+str(i))
-                # for contender in range(self.brackets[bracket_num][i]['ni']):
-                    # self.brackets[bracket_num][i]['contenders'][contender] = dict.fromkeys([
-                    #                                                                        'hparams', 'score'])
-                    # self.brackets[bracket_num][i]['contenders'][contender]['hparams'] = configurations[bracket_num][contender]['hparams']
-                    # model = self.create_model(
-                    #     self.estimator,
-                    #     random_state=self.random_state,
-                    #     epoch=self.brackets[bracket_num][i]['ri'],
-                    #     **configurations[bracket_num][contender]['hparams']
-                    # )
-                    # self.brackets[bracket_num][i]['contenders'][contender]['score'] = cross_val_score(
-                    #     model, X, y,
-                    #     scoring=self.scoring,
-                    #     cv=self.cv
-                    # ).mean()
-                
+                print('Bracket', str(bracket_num)+'.'+str(i))                
                 self.fit_multiple(X, y, configurations, bracket_num, i)
 
                 configurations[bracket_num] = self.get_top_k(
