@@ -13,7 +13,7 @@ from tqdm import tqdm
 
 
 class MLP(nn.Module):
-    def __init__(self,list_hidden_layer,input_size,output_size,batch_size,lr,epoch):
+    def __init__(self,list_hidden_layer,input_size,output_size,batch_size,lr,epoch,device='cpu'):
         super().__init__()
         self.input_size=input_size
         self.list_layer = list_hidden_layer
@@ -22,6 +22,8 @@ class MLP(nn.Module):
         self.epoch=epoch
         self.batch_size=batch_size
         self.lr=lr
+
+        self.device=device
         
         hasil=[]
         
@@ -36,14 +38,14 @@ class MLP(nn.Module):
         self.layers=nn.Sequential(*hasil)
     def forward(self,x):
         return self.layers(x)
-    def train(self,dataset,device='cpu'):
+    def train(self,dataset):
         
         trainloader = DataLoader(
             dataset,
             batch_size=self.batch_size,
             shuffle=True)
         
-        self.to(device)
+        self.to(self.device)
 
         criterion = torch.nn.BCELoss()
         optimizer = torch.optim.Adam(self.parameters(),betas=(0.9, 0.999), lr =self.lr)
@@ -51,7 +53,7 @@ class MLP(nn.Module):
         for data in trainloader:
             # get the inputs; data is a list of [inputs, labels]
             inputs, labels = data
-            inputs, labels = inputs.to(device), labels.to(device)
+            inputs, labels = inputs.to(self.device), labels.to(self.device)
 
             # zero the parameter gradients
             optimizer.zero_grad()
