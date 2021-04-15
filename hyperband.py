@@ -14,13 +14,14 @@ from torch.utils.data import Dataset, TensorDataset, DataLoader
 from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.metrics import *
 from numpy.random import default_rng
+from utils import *
 
 import multiprocessing
 from multiprocessing import Pool
 
 import Models
 
-class HyperBandSearchCV:
+class HyperBandTorchSearchCV:
     def __init__(self, estimator, search_spaces,
                  scoring, max_epochs, factor=3,
                  cv=1, random_state=420,
@@ -38,15 +39,18 @@ class HyperBandSearchCV:
         self.n_jobs = n_jobs
 
     def get_score(self, value):
-        return cross_val_score(**value).mean()
+        return cross_val_score_torch(**value).mean()
 
     @staticmethod
     def create_cat_combinations(dict_hparam):
         cat_hparam = {}
         num_hparam = {}
+        layers_hparam = {}
 
         for hparam in dict_hparam.keys():
-            if type(dict_hparam[hparam]) == list:
+            if hparam in ['num_hidden_layer', 'num_neuron']:
+                layers_hparam[hparam] = dict_hparam[hparam]
+            elif type(dict_hparam[hparam]) == list:
                 cat_hparam[hparam] = dict_hparam[hparam]
             else:
                 num_hparam[hparam] = dict_hparam[hparam]
@@ -56,10 +60,10 @@ class HyperBandSearchCV:
         combinations = pd.DataFrame(
             combinations_product, columns=cat_hparam.keys())
 
-        return cat_hparam, num_hparam, combinations
+        return cat_hparam, num_hparam, layers_hparam, combinations
 
     @staticmethod
-    def get_hyperparameter_configuration(cat_hparam, num_hparam, combinations, n, random_state=420):
+    def get_hyperparameter_configuration(cat_hparam, num_hparam, layers_hparam, combinations, n, random_state=420):
         np.random.seed(seed=random_state)
         configuration = dict.fromkeys(range(n))
         for ind in range(n):
@@ -173,7 +177,7 @@ class HyperBandSearchCV:
     def fit(self, X, y):
         print(f'HyperBand on {self.estimator}')
         self.create_brackets()
-        cat_hparam, num_hparam, combinations = self.create_cat_combinations(
+        cat_hparam, num_hparam, layers_hparam, combinations = self.create_cat_combinations(
             self.search_spaces)
         configurations = dict.fromkeys(range(self.max_rounds + 1))
         for bracket_num in range(self.max_rounds, -1, -1):
@@ -182,7 +186,7 @@ class HyperBandSearchCV:
                 (self.factor**bracket_num/(bracket_num+1))
             )
             configurations[bracket_num] = self.get_hyperparameter_configuration(
-                cat_hparam, num_hparam, combinations, n)
+                cat_hparam, num_hparam, layers_hparam, combinations, n)
             for i in range(bracket_num + 1):
                 print('Bracket', str(bracket_num)+'.'+str(i))                
                 self.fit_multiple(X, y, configurations, bracket_num, i)

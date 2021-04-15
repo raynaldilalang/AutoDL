@@ -15,7 +15,9 @@ warnings.filterwarnings("ignore")
 
 
 class MLP(nn.Module):
-    def __init__(self, list_hidden_layer, input_size, output_size, batch_size, epoch, lr=1e-3, droprates=0, reguralization={'l1': 0, 'l2': 0}, batch_norm=False, device='cpu'):
+    def __init__(self, list_hidden_layer, input_size, output_size, batch_size, epoch,
+                 activation='ReLU', optimizer='Adam', lr=1e-3, drop_rate=0, l1=0, l2=0,
+                 batch_norm=False, device='cpu'):
         super().__init__()
         self.input_size = input_size
         self.list_layer = list_hidden_layer
@@ -24,24 +26,32 @@ class MLP(nn.Module):
         self.epoch = epoch
         self.batch_size = batch_size
         self.lr = lr
-        self.droprates = droprates
-        self.reguralization = reguralization
+        self.drop_rate = drop_rate
+        self.l1 = l1
+        self.l2 = l2
+
+        self.activation = activation
+        self.optimizer = optimizer
 
         self.device = device
 
+        activation = eval(f'nn.{activation}')
+
         hasil = []
-        hasil += ([nn.Dropout(p=droprates)])
+        hasil += ([nn.Dropout(p=drop_rate)])
         if batch_norm:
             hasil += ([nn.BatchNorm1d(input_size)])
 
         for i, num_layer in enumerate(list_hidden_layer):
             if i == 0:
-                hasil += ([nn.Linear(input_size, num_layer), nn.SELU()])
+                hasil += ([nn.Linear(input_size, num_layer), activation()])
             elif i == len(list_hidden_layer)-1:
-                hasil += ([nn.Linear(list_hidden_layer[i-1], num_layer), nn.SELU()])
+                hasil += ([nn.Linear(list_hidden_layer[i-1],
+                          num_layer), activation()])
                 hasil += ([nn.Linear(num_layer, output_size), nn.Sigmoid()])
             else:
-                hasil += ([nn.Linear(list_hidden_layer[i-1], num_layer), nn.SELU()])
+                hasil += ([nn.Linear(list_hidden_layer[i-1],
+                          num_layer), activation()])
         self.layers = nn.Sequential(*hasil)
 
     def forward(self, x):
@@ -56,8 +66,17 @@ class MLP(nn.Module):
         self.to(self.device)
 
         criterion = torch.nn.BCELoss()
-        optimizer = torch.optim.Adam(self.parameters(), betas=(
-            0.9, 0.999), lr=self.lr, weight_decay=self.reguralization['l2'])
+        optimizer = eval(
+            f'''
+            torch.optim.{self.optimizer}({
+                self.parameters(), betas=(0.9, 0.999), lr=self.lr, weight_decay=self.l2
+                })
+            '''
+        )
+        # optimizer = torch.optim.Adam(
+        #     self.parameters(), betas=(0.9, 0.999),
+        #     lr=self.lr, weight_decay=self.l2
+        # )
 
         for data in trainloader:
             # get the inputs; data is a list of [inputs, labels]
@@ -72,12 +91,12 @@ class MLP(nn.Module):
             reg_loss = 0
             factor = 0
 
-            if self.reguralization['l1'] > 0:
+            if self.l1 > 0:
                 l1_crit = nn.L1Loss(size_average=False)
                 for param in self.parameters():
                     reg_loss += l1_crit(param, target=torch.zeros_like(param))
 
-                factor = self.reguralization['l1']
+                factor = self.l1
 
             loss = criterion(outputs, labels)
             loss += factor * reg_loss
