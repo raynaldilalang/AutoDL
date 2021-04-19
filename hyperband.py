@@ -15,6 +15,8 @@ from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.metrics import *
 from numpy.random import default_rng
 from utils import *
+import time
+from tqdm import tqdm
 
 import multiprocessing
 import torch.multiprocessing
@@ -22,6 +24,7 @@ from torch.multiprocessing import Pool
 from torch.multiprocessing import Process
 
 from Models import MLP
+
 
 class HyperBandTorchSearchCV:
     def __init__(self, estimator, search_spaces,
@@ -40,21 +43,29 @@ class HyperBandTorchSearchCV:
 
         self.n_jobs = n_jobs
         self.device = device
-        
+
         available_cudas = torch.cuda.device_count()
-        if available_cudas < len(gpu_ids):
+        if available_cudas == 0 and device == 'cuda':
+            self.device = 'cpu'
+            print(f'WARNING: No cuda devices are found, using cpu instead')
+        elif available_cudas < len(gpu_ids):
             n_gpu = available_cudas
             print(f'WARNING: Only {available_cudas} cuda devices are found')
         else:
             n_gpu = len(gpu_ids)
 
         self.gpu_ids = gpu_ids
-        self.n_gpu = n_gpu
+        if n_gpu > 0:
+            self.n_device = n_gpu
+        else:
+            self.n_device = 1
 
+        print(
+            f'Initializing Torch HyperBand Search using {self.n_device} {self.device} devices')
 
     @staticmethod
-    def get_score(model, X, y, scoring, cv, n_jobs):
-        return cross_val_score_torch(model, X, y, scoring, cv, n_jobs).mean()
+    def get_cv_score(model, X, y, scoring, cv, n_jobs, verbose):
+        return cross_val_score_torch(model, X, y, scoring, cv, n_jobs, verbose).mean()
 
     @staticmethod
     def create_cat_combinations(dict_hparam):
@@ -93,7 +104,8 @@ class HyperBandTorchSearchCV:
                     num_hidden_layer = int(distribution.rvs(
                         layers_hparam['num_hidden_layer'][0], layers_hparam['num_hidden_layer'][1]-layers_hparam['num_hidden_layer'][0]))
                 except NameError:
-                    print(f'WARNING: Distribution {layers_hparam["num_hidden_layer"][2]} not found, generating random number uniformly.')
+                    print(
+                        f'WARNING: Distribution {layers_hparam["num_hidden_layer"][2]} not found, generating random number uniformly.')
                     num_hidden_layer = randint.rvs(
                         layers_hparam['num_hidden_layer'][0], layers_hparam['num_hidden_layer'][1]+1)
             else:
@@ -105,15 +117,15 @@ class HyperBandTorchSearchCV:
                     distribution = eval(
                         layers_hparam['num_neuron'][2].replace("-", ""))
                     configuration[ind]['hparams']['list_hidden_layer'] = distribution.rvs(
-                        layers_hparam['num_neuron'][0], layers_hparam['num_neuron'][1]-layers_hparam['num_neuron'][0], size=num_hidden_layer).astype(int)
+                        layers_hparam['num_neuron'][0], layers_hparam['num_neuron'][1]-layers_hparam['num_neuron'][0], size=num_hidden_layer).astype(int).tolist()
                 except NameError:
                     print(
                         f'WARNING: Distribution {layers_hparam["num_neuron"][2]} not found, generating random number uniformly.')
                     configuration[ind]['hparams']['list_hidden_layer'] = randint.rvs(
-                        layers_hparam['num_neuron'][0], layers_hparam['num_neuron'][1]+1, size=num_hidden_layer)
+                        layers_hparam['num_neuron'][0], layers_hparam['num_neuron'][1]+1, size=num_hidden_layer).tolist()
             else:
                 configuration[ind]['hparams']['list_hidden_layer'] = randint.rvs(
-                    layers_hparam['num_neuron'][0], layers_hparam['num_neuron'][1]+1, size=num_hidden_layer)
+                    layers_hparam['num_neuron'][0], layers_hparam['num_neuron'][1]+1, size=num_hidden_layer).tolist()
 
             if len(cat_hparam):
                 cat_combination_num = random.randint(
@@ -156,7 +168,7 @@ class HyperBandTorchSearchCV:
 
     def create_brackets(self):
         brackets = dict.fromkeys(range(self.max_rounds + 1))
-        for bracket_num in brackets:
+        for bracket_num in range(self.max_rounds, -1, -1):
             n = math.ceil(
                 (self.total_epochs/self.max_epochs) *
                 (self.factor**bracket_num/(bracket_num+1))
@@ -168,15 +180,22 @@ class HyperBandTorchSearchCV:
                     ['ni', 'ri', 'contenders'])
                 brackets[bracket_num][i]['ni'] = math.floor(
                     n * self.factor**(-i))
-                brackets[bracket_num][i]['ri'] = r * self.factor**i
+                brackets[bracket_num][i]['ri'] = float(r * self.factor**i)
                 brackets[bracket_num][i]['contenders'] = dict.fromkeys(
                     range(brackets[bracket_num][i]['ni']))
+
+            bracket_df = pd.DataFrame.from_dict(
+                brackets[bracket_num], orient='index')[['ni', 'ri']]
+            print(f'Bracket {bracket_num} setup:')
+            print(bracket_df.rename(
+                columns={'ni': 'Number of Configurations', 'ri': 'Resource'}), '\n')
 
         self.brackets = brackets
 
     @staticmethod
     def create_model(model_name, random_state, epoch, device, **hparams):
-        model = eval(f'{model_name}')(**hparams, epoch=int(epoch), device=device)
+        model = eval(f'{model_name}')(
+            **hparams, epoch=int(epoch), device=device)
 
         return model
 
@@ -192,13 +211,13 @@ class HyperBandTorchSearchCV:
     def fit_multiple(self, X, y, configurations, bracket_num):
         device_used = self.device
         if device_used == 'cuda':
-            device_used += f':{self.gpu_ids[bracket_num % self.n_gpu]}'
+            device_used += f':{self.gpu_ids[bracket_num % self.n_device]}'
         list_toTrain_model = []
 
-        for i in range(bracket_num + 1):
-            print('Bracket', str(bracket_num)+'.'+str(i))
+        for i in tqdm(range(bracket_num + 1), desc=f'Bracket {bracket_num}', position=(self.max_rounds-bracket_num)):
             for contender in range(self.brackets[bracket_num][i]['ni']):
-                self.brackets[bracket_num][i]['contenders'][contender] = dict.fromkeys(['hparams', 'score'])
+                self.brackets[bracket_num][i]['contenders'][contender] = dict.fromkeys([
+                                                                                       'hparams', 'score'])
                 self.brackets[bracket_num][i]['contenders'][contender]['hparams'] = configurations[contender]['hparams']
                 model = self.create_model(
                     self.estimator,
@@ -207,11 +226,14 @@ class HyperBandTorchSearchCV:
                     device=device_used,
                     **configurations[contender]['hparams']
                 )
-                list_toTrain_model.append((model, X, y, self.scoring, self.cv, self.cv))
+                verbose = int(i == bracket_num)
+                list_toTrain_model.append(
+                    (model, X, y, self.scoring, self.cv, self.cv, verbose))
 
             torch.multiprocessing.set_start_method('spawn', force=True)
             with MyPool(self.n_jobs) as p:
-                list_toTrain_score = p.starmap(self.get_score, list_toTrain_model)
+                list_toTrain_score = p.starmap(
+                    self.get_cv_score, list_toTrain_model)
 
             for contender in range(self.brackets[bracket_num][i]['ni']):
                 self.brackets[bracket_num][i]['contenders'][contender]['score'] = list_toTrain_score[contender]
@@ -221,13 +243,14 @@ class HyperBandTorchSearchCV:
                 k=max(math.floor(
                     self.brackets[bracket_num][i]['ni']/self.factor), 1)
             )
+
         configurations = configurations[0]
-        print(f'Best of bracket {bracket_num}:',
-                configurations)
+        end = time.time()
+        # print(f'Best of Bracket {bracket_num}:', configurations)
         return configurations
 
     def fit(self, X, y):
-        print(f'HyperBand on {self.estimator}')
+        print(f'HyperBand on {self.estimator} \n')
         self.create_brackets()
         cat_hparam, num_hparam, layers_hparam, combinations = self.create_cat_combinations(
             self.search_spaces)
@@ -242,12 +265,13 @@ class HyperBandTorchSearchCV:
                 cat_hparam, num_hparam, layers_hparam, combinations, n)
 
         torch.multiprocessing.set_start_method('spawn', force=True)
-        with MyPool(self.max_rounds + 1) as p:
-            list_best_config = p.starmap(self.fit_multiple, [(X, y, configurations[bracket_num], bracket_num) for bracket_num in range(self.max_rounds, -1, -1)])
+        with MyPool(self.n_device) as p:
+            list_best_config = p.starmap(self.fit_multiple, [(
+                X, y, configurations[bracket_num], bracket_num) for bracket_num in range(self.max_rounds, -1, -1)])
 
         best_config = pd.DataFrame(list_best_config)
         best_config = best_config.sort_values(
-            ['score'], ascending=False).reset_index(drop=True).loc[0, :]
+            ['score'], ascending=False).reset_index(drop=True).head(1)
 
         self.best_config = best_config
         self.best_params_ = best_config['hparams']

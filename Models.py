@@ -40,30 +40,30 @@ class MLP(nn.Module):
         activation = eval(f'nn.{activation}')
 
         hasil = []
-        # hasil += ([nn.Dropout(p=drop_rate)])
         if batch_norm:
             hasil += ([nn.BatchNorm1d(input_size)])
 
         for i, num_layer in enumerate(list_hidden_layer):
             if 0 < i < len(list_hidden_layer)-1:
-                hasil += ([nn.Dropout(p=drop_rate)])
                 hasil += ([nn.Linear(list_hidden_layer[i-1],
                           num_layer), activation()])
+                hasil += ([nn.Dropout(p=drop_rate)])
             else:
                 if i == 0:
                     hasil += ([nn.Linear(input_size, num_layer), activation()])
                 if i == len(list_hidden_layer)-1:
                     hasil += ([nn.Linear(list_hidden_layer[i-1],
-                            num_layer), activation()])
+                                         num_layer), activation()])
                     hasil += ([nn.Linear(num_layer, output_size), nn.Sigmoid()])
-                    # hasil += ([nn.Linear(num_layer, output_size)])
 
         self.layers = nn.Sequential(*hasil)
 
     def get_config(self):
         config = dict(zip(
-            ['list_hidden_layer', 'input_size', 'output_size', 'batch_size', 'epoch', 'activation', 'optimizer', 'lr', 'drop_rate', 'l1', 'l2', 'batch_norm', 'device'],
-            [self.list_layer, self.input_size, self.output_size, self.batch_size, self.epoch, self.activation, self.optimizer, self.lr, self.drop_rate, self.l1, self.l2, self.batch_norm, self.device]
+            ['list_hidden_layer', 'input_size', 'output_size', 'batch_size', 'epoch',
+                'activation', 'optimizer', 'lr', 'drop_rate', 'l1', 'l2', 'batch_norm', 'device'],
+            [self.list_layer, self.input_size, self.output_size, self.batch_size, self.epoch, self.activation,
+                self.optimizer, self.lr, self.drop_rate, self.l1, self.l2, self.batch_norm, self.device]
         ))
 
         return config
@@ -80,7 +80,8 @@ class MLP(nn.Module):
         self.to(self.device)
 
         criterion = eval(f'torch.nn.{self.loss_function}()')
-        optimizer = eval(f'torch.optim.{self.optimizer}(self.parameters(), lr=self.lr, weight_decay=self.l2)')
+        optimizer = eval(
+            f'torch.optim.{self.optimizer}(self.parameters(), lr=self.lr, weight_decay=self.l2)')
 
         for data in trainloader:
             # get the inputs; data is a list of [inputs, labels]
@@ -109,7 +110,12 @@ class MLP(nn.Module):
             optimizer.step()
         self.loss = loss
 
-    def fit(self, X, y):
+    def fit(self, X, y, verbose=0):
         dataset = TensorDataset(X, y)
-        for epoch in tqdm(range(self.epoch)):
-            self.train(dataset)
+        if verbose:
+            # for epoch in tqdm(range(self.epoch)):
+            for epoch in range(self.epoch):
+                self.train(dataset)
+        else:
+            for epoch in range(self.epoch):
+                self.train(dataset)
