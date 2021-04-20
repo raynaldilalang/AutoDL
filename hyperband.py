@@ -28,6 +28,50 @@ from Models import *
 
 
 class HyperBandTorchSearchCV:
+    """
+    Hyperband optimization over deep learning hyperparameters. Used specifically for PyTorch
+    neural network modules.
+
+    It is a principled early-stoppping method that adaptively allocates a pre-defined resource,
+    e.g., iterations, data samples or number of features, to randomly sampled configurations.
+
+    Parameters
+    ----------
+    estimator : str.
+        An object of that type is instantiated for each search point.
+        This object is assumed to implement the scikit-learn estimator api.
+        Either estimator needs to provide a ``score`` function,
+        or ``scoring`` must be passed.
+
+    search_spaces : dict.
+        Dictionary with hyperparameter names as keys
+        1. list of hyperparameter values to randomly choose form (uniformly)
+        2. tuple of size two, as the lower bound and upper bound for the hyperparameters
+        to choose from (uniformly)
+        3. tuple of size three, with the third argument as the distribution name
+
+    scoring : callable.
+        A scorer callable object / function with signature
+        ``scorer(estimator, X, y)``.
+
+    cv : int.
+        The number of folds in cross-validation splitting strategy.
+
+    random_state : int.
+        Seed number for random number generators
+
+    greater_is_better : bool.
+        True if greater scoring metric means better result, and False otherwise
+
+    n_jobs : int.
+        The number of parallel model fittings done in a single round of a bracket
+
+    device : str.
+        One of 'cpu' or 'cuda'
+
+    gpu_ids : list.
+        List of gpu number used (if cuda device is used)
+    """
     def __init__(self, estimator, search_spaces,
                  scoring, max_epochs, factor=3,
                  cv=1, random_state=420, greater_is_better=True,
@@ -67,11 +111,67 @@ class HyperBandTorchSearchCV:
             f'Initializing Torch HyperBand Search using {self.n_device} {self.device} devices')
 
     @staticmethod
-    def get_cv_score(model, X, y, scoring, cv, n_jobs, verbose):
-        return cross_val_score_torch(model, X, y, scoring, cv, n_jobs, verbose).mean()
+    def get_mean_cv_score(model, X, y, scoring, cv, n_jobs, verbose):
+        """
+        Returns the mean cross-validation score of some pytorch model
+
+        Parameters
+        ----------
+        model : callable.
+            Callable object with method `fit`
+
+        X : array-like.
+            Array of predictors
+
+        y : array-like.
+            Array of target/labels
+
+        scoring : callable.
+            A scorer callable object / function with signature
+            ``scorer(estimator, X, y)``.
+
+        n_jobs : int.
+            Number of parallel processes used in cross-validation
+
+        verbose : int
+            Has value 1 if epoch progress bar should be shown
+
+        Returns
+        -------
+        mean_score : float.
+            Mean cross-validation score
+
+        """
+        
+        mean_cv_score = cross_val_score_torch(model, X, y, scoring, cv, n_jobs, verbose).mean()
+        return mean_score
 
     @staticmethod
-    def create_cat_combinations(dict_hparam):
+    def create_combinations(dict_hparam):
+        """
+        Separate the search space into categorical, numerical, and NN-layer hyperparameters;
+        as well as generate all posible combinations of categorical hyperparameters
+
+        Parameters
+        ----------
+        dict_hparam : dict.
+            search space given in __init__
+
+        Returns
+        -------
+        cat_hparam : dict.
+            Dictionary of categorical hyperparameters
+
+        num_hparam : dict.
+            Dictionary of numerical hyperparameters
+
+        layers_hparam : dict.
+            Dictionary of NN-layers hyperparameters
+
+        combinations : pandas.DataFrame.
+            List of all possible combinations of categorical hyperparameters
+
+        """
         cat_hparam = {}
         num_hparam = {}
         layers_hparam = {}
@@ -93,6 +193,29 @@ class HyperBandTorchSearchCV:
 
     @staticmethod
     def get_hyperparameter_configuration(cat_hparam, num_hparam, layers_hparam, combinations, n, random_state=420):
+        """
+        Generates n hyperparameter configurations based on the given dictionaies of hyperparameters
+
+        Parameters
+        -------
+        cat_hparam : dict.
+            Dictionary of categorical hyperparameters
+
+        num_hparam : dict.
+            Dictionary of numerical hyperparameters
+
+        layers_hparam : dict.
+            Dictionary of NN-layers hyperparameters
+
+        combinations : pandas.DataFrame.
+            List of all possible combinations of categorical hyperparameters
+
+        Returns
+        -------
+        configuration : dict,
+            Dictionary with the configuration number as the outmost key,
+            and the hyperparameters as the inner key
+        """
         np.random.seed(seed=random_state)
         configuration = dict.fromkeys(range(n))
         for ind in range(n):
@@ -165,11 +288,19 @@ class HyperBandTorchSearchCV:
                             configuration[ind]['hparams'][hparam] = uniform.rvs(
                                 num_hparam[hparam][0], num_hparam[hparam][1]-num_hparam[hparam][0])
 
-            configuration[ind]['isTrained'] = False
-
         return configuration
 
-    def create_brackets(self):
+    def _create_brackets(self):
+        """
+        Generate hyperband brackets, which contains the number of models produced
+        in each round on each bracket
+
+        Updates
+        -------
+        brackets : dict
+            Dictionary of brackets. Each bracket is a dictionary containing the number
+            of models to train ('ni') and the resources allocated on each one ('ri') 
+        """
         brackets = dict.fromkeys(range(self.max_rounds + 1))
         for bracket_num in range(self.max_rounds, -1, -1):
             n = math.ceil(
@@ -197,13 +328,56 @@ class HyperBandTorchSearchCV:
 
     @staticmethod
     def create_model(model_name, random_state, epoch, device, **hparams):
+        """
+        Initiate a model object
+
+        Parameters
+        ----------
+        model_name : str
+            An object of that type is instantiated.
+            This object is assumed to implement the scikit-learn estimator api.
+            Either estimator needs to provide a ``score`` function,
+            or ``scoring`` must be passed.
+
+        random_state : int.
+            Seed number for random number generators
+
+        epoch : int.
+            The number times that the learning algorithm will work
+            through the entire training dataset
+
+        device : str.
+            One of 'cpu' or 'cuda'
+
+        Returns
+        -------
+        model : callable.
+            Callable object with method `fit`
+        """
         model = eval(f'{model_name}')(
-            **hparams, epoch=int(epoch), device=device)
+            **hparams, epoch=int(epoch), random_state=random_state, device=device)
 
         return model
 
     @staticmethod
     def get_top_k(bracket_round, k):
+        """
+        Gets the top k configurations in one round of a bracket
+
+        Parameters
+        ----------
+        bracket_round : dict
+            Dictionary of all configurations in one round of a bracket,
+            together with their scores
+
+        k : int.
+            Number of configurations to get
+
+        Returns
+        -------
+        model : callable.
+            Callable object with method `fit`
+        """
         configurations = pd.DataFrame.from_dict(bracket_round, orient='index')
         configurations = configurations.sort_values(
             ['score'], ascending=False).reset_index(drop=True).head(k)
@@ -212,6 +386,24 @@ class HyperBandTorchSearchCV:
         return configurations
 
     def fit_multiple(self, X, y, configurations, bracket_num):
+        """
+        Fits all configurations in one round of a bracket, and
+        returns the best configuration of that round
+
+        Parameters
+        ----------
+        bracket_round : dict
+            Dictionary of all configurations in one round of a bracket,
+            together with their scores
+
+        k : int.
+            Number of configurations to get
+
+        Returns
+        -------
+        best_config_by_round : callable.
+            Callable object with method `fit`
+        """
         device_used = self.device
         if device_used == 'cuda':
             device_used += f':{self.gpu_ids[bracket_num % self.n_device]}'
@@ -237,7 +429,7 @@ class HyperBandTorchSearchCV:
             torch.multiprocessing.set_start_method('spawn', force=True)
             with MyPool(self.n_jobs) as p:
                 list_toTrain_score = p.starmap(
-                    self.get_cv_score, list_toTrain_model)
+                    self.get_mean_cv_score, list_toTrain_model)
 
             for contender in range(self.brackets[bracket_num][i]['ni']):
                 self.brackets[bracket_num][i]['contenders'][contender]['score'] = list_toTrain_score[contender]
@@ -254,9 +446,25 @@ class HyperBandTorchSearchCV:
         return best_config_by_round
 
     def fit(self, X, y):
+        """
+        Executes hyperband search based on the given configurations
+
+        Parameters
+        ----------
+        X : array-like.
+            Array of predictors
+
+        y : array-like.
+            Array of target/labels
+
+        Updates
+        -------
+        best_config : pandas.DataFrame.
+            Dataframe which list all the best configurations from each round of each bracket
+        """
         print(f'HyperBand on {self.estimator} \n')
-        self.create_brackets()
-        cat_hparam, num_hparam, layers_hparam, combinations = self.create_cat_combinations(
+        self._create_brackets()
+        cat_hparam, num_hparam, layers_hparam, combinations = self.create_combinations(
             self.search_spaces)
         configurations = dict.fromkeys(range(self.max_rounds + 1))
         processes = []
@@ -274,9 +482,9 @@ class HyperBandTorchSearchCV:
                 X, y, configurations[bracket_num], bracket_num) for bracket_num in range(self.max_rounds, -1, -1)])
 
         best_config = pd.DataFrame(list(chain.from_iterable(list_best_config)))
-        # best_config = best_config.sort_values(
-        #     ['score'], ascending=not self.greater_is_better).reset_index(drop=True).head(1)
+        best_config = best_config.sort_values(
+            ['score'], ascending=not self.greater_is_better).reset_index(drop=True)
 
         self.best_config = best_config
-        self.best_params_ = best_config['hparams']
-        self.best_score_ = best_config['score']
+        self.best_params_ = best_config.loc[0, 'hparams']
+        self.best_score_ = best_config.loc[0, 'score']
