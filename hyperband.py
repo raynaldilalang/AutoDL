@@ -216,7 +216,7 @@ class HyperBandTorchSearchCV:
             device_used += f':{self.gpu_ids[bracket_num % self.n_device]}'
         list_toTrain_model = []
 
-        for i in tqdm(range(bracket_num + 1), desc=f'Bracket {bracket_num}', position=(self.max_rounds-bracket_num)):
+        for i in tqdm(range(bracket_num + 1), desc=f'Bracket {bracket_num}', position=(self.max_rounds-bracket_num), leave=True):
             for contender in range(self.brackets[bracket_num][i]['ni']):
                 self.brackets[bracket_num][i]['contenders'][contender] = dict.fromkeys([
                                                                                        'hparams', 'score'])
