@@ -23,13 +23,13 @@ import torch.multiprocessing
 from torch.multiprocessing import Pool
 from torch.multiprocessing import Process
 
-from Models import MLP
+from Models import *
 
 
 class HyperBandTorchSearchCV:
     def __init__(self, estimator, search_spaces,
                  scoring, max_epochs, factor=3,
-                 cv=1, random_state=420,
+                 cv=1, random_state=420, greater_is_better=True,
                  n_jobs=1, device='cpu', gpu_ids=None):
         self.estimator = estimator
         self.search_spaces = search_spaces
@@ -38,6 +38,7 @@ class HyperBandTorchSearchCV:
         self.factor = factor
         self.cv = cv
         self.random_state = random_state
+        self.greater_is_better = greater_is_better
         self.max_rounds = math.floor(math.log(max_epochs, factor))
         self.total_epochs = (self.max_rounds + 1) * max_epochs
 
@@ -47,6 +48,7 @@ class HyperBandTorchSearchCV:
         available_cudas = torch.cuda.device_count()
         if available_cudas == 0 and device == 'cuda':
             self.device = 'cpu'
+            n_gpu = 0
             print(f'WARNING: No cuda devices are found, using cpu instead')
         elif available_cudas < len(gpu_ids):
             n_gpu = available_cudas
@@ -226,7 +228,7 @@ class HyperBandTorchSearchCV:
                     device=device_used,
                     **configurations[contender]['hparams']
                 )
-                verbose = int(i == bracket_num)
+                verbose = 0
                 list_toTrain_model.append(
                     (model, X, y, self.scoring, self.cv, self.cv, verbose))
 
@@ -245,8 +247,7 @@ class HyperBandTorchSearchCV:
             )
 
         configurations = configurations[0]
-        end = time.time()
-        # print(f'Best of Bracket {bracket_num}:', configurations)
+
         return configurations
 
     def fit(self, X, y):
@@ -271,7 +272,7 @@ class HyperBandTorchSearchCV:
 
         best_config = pd.DataFrame(list_best_config)
         best_config = best_config.sort_values(
-            ['score'], ascending=False).reset_index(drop=True).head(1)
+            ['score'], ascending=not self.greater_is_better).reset_index(drop=True).head(1)
 
         self.best_config = best_config
         self.best_params_ = best_config['hparams']

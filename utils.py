@@ -27,28 +27,27 @@ class NoDaemonProcess(torch.multiprocessing.Process):
 class MyPool(multiprocessing.pool.Pool):
     Process = NoDaemonProcess
 
+    def istarmap(self, func, iterable, chunksize=1):
+        """starmap-version of imap
+        """
+        if self._state != multiprocessing.RUN:
+            raise ValueError("Pool not running")
 
-def istarmap(self, func, iterable, chunksize=1):
-    """starmap-version of imap
-    """
-    if self._state != mpp.RUN:
-        raise ValueError("Pool not running")
+        if chunksize < 1:
+            raise ValueError(
+                "Chunksize must be 1+, not {0:n}".format(
+                    chunksize))
 
-    if chunksize < 1:
-        raise ValueError(
-            "Chunksize must be 1+, not {0:n}".format(
-                chunksize))
-
-    task_batches = mpp.Pool._get_tasks(func, iterable, chunksize)
-    result = mpp.IMapIterator(self._cache)
-    self._taskqueue.put(
-        (
-            self._guarded_task_generation(result._job,
-                                          mpp.starmapstar,
-                                          task_batches),
-            result._set_length
-        ))
-    return (item for chunk in result for item in chunk)
+        task_batches = multiprocessing.Pool._get_tasks(func, iterable, chunksize)
+        result = multiprocessing.IMapIterator(self._cache)
+        self._taskqueue.put(
+            (
+                self._guarded_task_generation(result._job,
+                                            multiprocessing.starmapstar,
+                                            task_batches),
+                result._set_length
+            ))
+        return (item for chunk in result for item in chunk)
 
 
 def get_score(estimator, X_train, y_train, X_test, y_test, scoring, verbose):
@@ -66,7 +65,7 @@ def get_score(estimator, X_train, y_train, X_test, y_test, scoring, verbose):
     return score
 
 
-def cross_val_score_torch(estimator, X, y, scoring, cv=None, n_jobs=None, verbose=0):
+def cross_val_score_torch(estimator, X, y, scoring, cv=1, n_jobs=1, verbose=0):
     kf = KFold(n_splits=cv)
     kf.get_n_splits(X)
     score_test = []
