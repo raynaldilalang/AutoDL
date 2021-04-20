@@ -17,6 +17,7 @@ from numpy.random import default_rng
 from utils import *
 import time
 from tqdm import tqdm
+from itertools import chain
 
 import multiprocessing
 import torch.multiprocessing
@@ -215,6 +216,7 @@ class HyperBandTorchSearchCV:
         if device_used == 'cuda':
             device_used += f':{self.gpu_ids[bracket_num % self.n_device]}'
         list_toTrain_model = []
+        best_config_by_round = []
 
         for i in tqdm(range(bracket_num + 1), desc=f'Bracket {bracket_num}', position=(self.max_rounds-bracket_num), leave=True):
             for contender in range(self.brackets[bracket_num][i]['ni']):
@@ -246,9 +248,10 @@ class HyperBandTorchSearchCV:
                     self.brackets[bracket_num][i]['ni']/self.factor), 1)
             )
 
-        configurations = configurations[0]
+            best_config_by_round.append(
+                {'bracket': bracket_num, 'round': i, 'epoch': self.brackets[bracket_num][i]['ri'], **configurations[0]})
 
-        return configurations
+        return best_config_by_round
 
     def fit(self, X, y):
         print(f'HyperBand on {self.estimator} \n')
@@ -270,9 +273,9 @@ class HyperBandTorchSearchCV:
             list_best_config = p.starmap(self.fit_multiple, [(
                 X, y, configurations[bracket_num], bracket_num) for bracket_num in range(self.max_rounds, -1, -1)])
 
-        best_config = pd.DataFrame(list_best_config)
-        best_config = best_config.sort_values(
-            ['score'], ascending=not self.greater_is_better).reset_index(drop=True).head(1)
+        best_config = pd.DataFrame(list(chain.from_iterable(list_best_config)))
+        # best_config = best_config.sort_values(
+        #     ['score'], ascending=not self.greater_is_better).reset_index(drop=True).head(1)
 
         self.best_config = best_config
         self.best_params_ = best_config['hparams']
