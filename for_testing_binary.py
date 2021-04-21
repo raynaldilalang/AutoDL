@@ -12,11 +12,11 @@ if __name__ == "__main__":
 
     dict_params = {
         'MLPClassifier': {
-            'num_hidden_layer': (2, 6),
-            'num_neuron': (2, 32, 'loguniform'),
+            'num_hidden_layer': (2, 4),
+            'num_neuron': (2, 16, 'loguniform'),
             'input_size': [11],
             'output_size': [1],
-            'batch_size': (2, 128, 'loguniform'),
+            'batch_size': (2, 256, 'loguniform'),
             'activation': ['Tanh', 'ReLU', 'SELU','CELU', 'GELU', 'PReLU', 'SiLU'],
             'optimizer': ['Adam', 'SGD', 'Adadelta', 'RMSprop'],
             'loss_function': ['BCELoss'],
@@ -31,8 +31,8 @@ if __name__ == "__main__":
     opt = HyperBandTorchSearchCV(
         estimator='MLPClassifier',
         search_spaces=dict_params['MLPClassifier'],
-        max_epochs=64,
-        factor=4,
+        max_epochs=9,
+        factor=3,
         scoring=roc_auc_score,
         cv=2,
         random_state=420,
