@@ -76,7 +76,7 @@ def cross_val_score_torch(estimator, X, y, scoring, cv=1, n_jobs=1, verbose=0):
         listToTrain.append((estimator, X_train, y_train,
                            X_test, y_test, scoring, verbose))
 
-    torch.multiprocessing.set_start_method('spawn', force=True)
+    # torch.multiprocessing.set_start_method('spawn', force=True)
     with MyPool(n_jobs) as p:
         score_test = p.starmap(get_score, listToTrain)
 

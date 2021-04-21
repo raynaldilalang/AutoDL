@@ -426,7 +426,7 @@ class HyperBandTorchSearchCV:
                 list_toTrain_model.append(
                     (model, X, y, self.scoring, self.cv, 1, verbose))
 
-            torch.multiprocessing.set_start_method('spawn', force=True)
+            # torch.multiprocessing.set_start_method('spawn', force=True)
             with MyPool(self.n_jobs) as p:
                 list_toTrain_score = p.starmap(
                     self.get_mean_cv_score, list_toTrain_model)
@@ -476,7 +476,7 @@ class HyperBandTorchSearchCV:
             configurations[bracket_num] = self.get_hyperparameter_configuration(
                 cat_hparam, num_hparam, layers_hparam, combinations, n)
 
-        torch.multiprocessing.set_start_method('spawn', force=True)
+        # torch.multiprocessing.set_start_method('spawn', force=True)
         with MyPool(self.n_device) as p:
             list_best_config = p.starmap(self._fit_multiple, [(
                 X, y, configurations[bracket_num], bracket_num) for bracket_num in range(self.max_rounds, -1, -1)])
