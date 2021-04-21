@@ -144,7 +144,7 @@ class HyperBandTorchSearchCV:
         """
         
         mean_cv_score = cross_val_score_torch(model, X, y, scoring, cv, n_jobs, verbose).mean()
-        return mean_score
+        return mean_cv_score
 
     @staticmethod
     def create_combinations(dict_hparam):
