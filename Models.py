@@ -382,8 +382,8 @@ class MLPRegressor(nn.Module):
             A dictionary of hyperpartameters used in the neural network.
         """
         config = dict(zip(
-            ['list_hidden_layer', 'input_size', 'output_size', 'batch_size', 'epoch',
-                'activation', 'optimizer', 'loss_function', 'lr', 'drop_rate', 'l1', 'l2', 'batch_norm', 'device'],
+            ['list_hidden_layer', 'input_size', 'output_size', 'batch_size', 'epoch', 'activation',
+                'optimizer', 'loss_function', 'lr', 'drop_rate', 'l1', 'l2', 'batch_norm', 'device'],
             [self.list_layer, self.input_size, self.output_size, self.batch_size, self.epoch, self.activation,
                 self.optimizer, self.loss_function, self.lr, self.drop_rate, self.l1, self.l2, self.batch_norm, self.device]
         ))
