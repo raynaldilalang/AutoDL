@@ -176,9 +176,9 @@ class MLPRegressor(nn.Module):
     def get_config(self):
         config = dict(zip(
             ['list_hidden_layer', 'input_size', 'output_size', 'batch_size', 'epoch',
-                'activation', 'optimizer', 'lr', 'drop_rate', 'l1', 'l2', 'batch_norm', 'device'],
+                'activation', 'optimizer', 'loss_function', 'lr', 'drop_rate', 'l1', 'l2', 'batch_norm', 'device'],
             [self.list_layer, self.input_size, self.output_size, self.batch_size, self.epoch, self.activation,
-                self.optimizer, self.lr, self.drop_rate, self.l1, self.l2, self.batch_norm, self.device]
+                self.optimizer, self.loss_function, self.lr, self.drop_rate, self.l1, self.l2, self.batch_norm, self.device]
         ))
 
         return config

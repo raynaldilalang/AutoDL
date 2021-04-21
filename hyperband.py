@@ -486,5 +486,11 @@ class HyperBandTorchSearchCV:
             ['score'], ascending=not self.greater_is_better).reset_index(drop=True)
 
         self.best_config = best_config
-        self.best_params_ = best_config.loc[0, 'hparams']
-        self.best_score_ = best_config.loc[0, 'score']
+
+    @property
+    def best_params_(self):
+        return self.best_config.loc[0, 'hparams']
+    
+    @property
+    def best_score_(self):
+        return self.best_config.loc[0, 'score']
