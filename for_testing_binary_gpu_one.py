@@ -11,7 +11,7 @@ from sklearn.metrics import roc_auc_score, accuracy_score, f1_score, precision_s
 
 if __name__ == "__main__":
     device='cuda'
-    config={'list_hidden_layer': [8, 16, 8], 'input_size': 11, 'output_size': 1, 'batch_size': 16, 'epoch': 4, 'activation': 'ReLU', 'optimizer': 'Adam', 'lr': 0.013100488985051721, 'drop_rate': 0.020882414665211624, 'l1': 0.00024315820298144713, 'l2': 0.056070623526488214, 'batch_norm': True, 'device': device}
+    config={'list_hidden_layer': [16, 32, 64, 64, 32], 'input_size': 11, 'output_size': 1, 'batch_size': 256, 'epoch': 10, 'activation': 'ReLU', 'optimizer': 'Adam', 'lr': 0.013100488985051721, 'drop_rate': 0.020882414665211624, 'l1': 0.00024315820298144713, 'l2': 0.056070623526488214, 'batch_norm': True, 'device': device}
 
     df = pd.read_csv('for_testing_binary.csv')
     y = df.pop('target').to_frame().to_numpy()
