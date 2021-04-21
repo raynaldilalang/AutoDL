@@ -34,7 +34,7 @@ if __name__ == "__main__":
         max_epochs=64,
         factor=4,
         scoring=roc_auc_score,
-        cv=3,
+        cv=2,
         random_state=420,
         n_jobs=1,
         device='cuda',
@@ -42,7 +42,7 @@ if __name__ == "__main__":
         greater_is_better=True
     )
 
-    df = pd.read_csv('train_binary_sampled.csv')
+    df = pd.read_csv('for_testing_binary.csv')
     y = df.pop('target').to_frame().to_numpy()
     df.pop('id')
     X = df.copy().to_numpy()

@@ -423,8 +423,9 @@ class HyperBandTorchSearchCV:
                     **configurations[contender]['hparams']
                 )
                 verbose = 0
+                # modified cv n_jobs to 1
                 list_toTrain_model.append(
-                    (model, X, y, self.scoring, self.cv, self.cv, verbose))
+                    (model, X, y, self.scoring, self.cv, 1, verbose))
 
             torch.multiprocessing.set_start_method('spawn', force=True)
             with MyPool(self.n_jobs) as p:
