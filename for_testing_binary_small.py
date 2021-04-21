@@ -6,6 +6,9 @@ from Models import MLPClassifier
 from utils import *
 from sklearn.metrics import roc_auc_score, accuracy_score, f1_score, precision_score, recall_score
 import time
+import os
+
+os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 
 def main():
     start = time.time()
@@ -16,7 +19,7 @@ def main():
             'num_neuron': (2, 16, 'loguniform'),
             'input_size': [11],
             'output_size': [1],
-            'batch_size': (2, 2),
+            'batch_size': (16, 16),
             'activation': ['Tanh', 'ReLU', 'SELU','CELU', 'GELU', 'PReLU', 'SiLU'],
             'optimizer': ['Adam', 'SGD', 'Adadelta', 'RMSprop'],
             'loss_function': ['BCELoss'],
