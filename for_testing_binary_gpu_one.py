@@ -8,6 +8,7 @@ from hyperband import HyperBandTorchSearchCV
 from Models import MLPClassifier
 from utils import *
 from sklearn.metrics import roc_auc_score, accuracy_score, f1_score, precision_score, recall_score
+import torch
 # from multiprocessing.pool import Pool
 
 def child(z):
@@ -26,10 +27,12 @@ def child(z):
     print(model.predict_proba(X))
 
 def parent(x):
+    torch.multiprocessing.set_start_method('spawn', force=True)
     with MyPool(1) as p:
         p.map(child, [1, 2])
 
 if __name__ == "__main__":
+    torch.multiprocessing.set_start_method('spawn', force=True)
     with MyPool(1) as p:
         p.map(parent, [1, 2])
     # cross_val_score_torch(model, X, y, roc_auc_score, cv=5, n_jobs=5, device='cuda')
