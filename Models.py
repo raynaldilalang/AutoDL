@@ -330,9 +330,14 @@ class MLPRegressor(nn.Module):
         e.g. 'cuda:1'
     """
     def __init__(self, list_hidden_layer, input_size, output_size, batch_size, epoch,
-                 activation='ReLU', optimizer='Adam', loss_function='L1Loss', lr=1e-3, drop_rate=0, l1=0, l2=0,
+                 activation='ReLU', optimizer='Adam', loss_function='L1Loss', lr=1e-3,
+                 drop_rate=0, l1=0, l2=0, random_state=None,
                  batch_norm=False, device='cpu'):
         super().__init__()
+
+        if type(random_state) == int:
+            torch.manual_seed(random_state)
+        
         self.input_size = input_size
         self.list_layer = list_hidden_layer
         self.output_size = output_size
