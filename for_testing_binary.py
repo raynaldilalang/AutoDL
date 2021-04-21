@@ -38,7 +38,7 @@ if __name__ == "__main__":
         random_state=420,
         n_jobs=1,
         device='cuda',
-        gpu_ids=[0, 1, 2],
+        gpu_ids=[0],
         greater_is_better=True
     )
 
