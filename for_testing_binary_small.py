@@ -7,7 +7,7 @@ from utils import *
 from sklearn.metrics import roc_auc_score, accuracy_score, f1_score, precision_score, recall_score
 import time
 
-if __name__ == "__main__":
+def main():
     start = time.time()
 
     dict_params = {
@@ -16,7 +16,7 @@ if __name__ == "__main__":
             'num_neuron': (2, 16, 'loguniform'),
             'input_size': [11],
             'output_size': [1],
-            'batch_size': (2, 256, 'loguniform'),
+            'batch_size': (2, 2),
             'activation': ['Tanh', 'ReLU', 'SELU','CELU', 'GELU', 'PReLU', 'SiLU'],
             'optimizer': ['Adam', 'SGD', 'Adadelta', 'RMSprop'],
             'loss_function': ['BCELoss'],
@@ -53,3 +53,6 @@ if __name__ == "__main__":
     end = time.time()
 
     print(f'\nHyperband Search took {round(end-start, 3)} seconds')
+
+if __name__ == "__main__":
+    main()
