@@ -385,7 +385,7 @@ class HyperBandTorchSearchCV:
 
         return configurations
 
-    def fit_multiple(self, X, y, configurations, bracket_num):
+    def _fit_multiple(self, X, y, configurations, bracket_num):
         """
         Fits all configurations in one round of a bracket, and
         returns the best configuration of that round
@@ -478,7 +478,7 @@ class HyperBandTorchSearchCV:
 
         torch.multiprocessing.set_start_method('spawn', force=True)
         with MyPool(self.n_device) as p:
-            list_best_config = p.starmap(self.fit_multiple, [(
+            list_best_config = p.starmap(self._fit_multiple, [(
                 X, y, configurations[bracket_num], bracket_num) for bracket_num in range(self.max_rounds, -1, -1)])
 
         best_config = pd.DataFrame(list(chain.from_iterable(list_best_config)))
