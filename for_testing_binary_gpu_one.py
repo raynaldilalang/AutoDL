@@ -27,5 +27,5 @@ def main(x):
 
 if __name__ == "__main__":
     with Pool(1) as p:
-        p.map(main, [1])
+        p.map(main, [1, 2, 3])
     # cross_val_score_torch(model, X, y, roc_auc_score, cv=5, n_jobs=5, device='cuda')
