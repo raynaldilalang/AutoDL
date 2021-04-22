@@ -13,7 +13,7 @@ import torch
 
 def child(z):
     device='cuda'
-    config={'list_hidden_layer': [16, 32, 64, 64, 32], 'input_size': 11, 'output_size': 1, 'batch_size': 256, 'epoch': 10, 'activation': 'ReLU', 'optimizer': 'Adam', 'lr': 0.013100488985051721, 'drop_rate': 0.020882414665211624, 'l1': 0.00024315820298144713, 'l2': 0.056070623526488214, 'batch_norm': True, 'device': device}
+    config={'list_hidden_layer': [16, 32, 64, 64, 32], 'input_size': 11, 'output_size': 1, 'batch_size': 1000, 'epoch': 1000, 'activation': 'ReLU', 'optimizer': 'Adam', 'lr': 0.013100488985051721, 'drop_rate': 0.020882414665211624, 'l1': 0.00024315820298144713, 'l2': 0.056070623526488214, 'batch_norm': True, 'device': device}
 
     df = pd.read_csv('for_testing_binary.csv')
     y = df.pop('target').to_frame().to_numpy()
@@ -32,7 +32,5 @@ def parent(x):
         p.map(child, [1, 2])
 
 if __name__ == "__main__":
-    torch.multiprocessing.set_start_method('spawn', force=True)
-    with MyPool(1) as p:
-        p.map(parent, [1, 2])
+    child(1)
     # cross_val_score_torch(model, X, y, roc_auc_score, cv=5, n_jobs=5, device='cuda')
