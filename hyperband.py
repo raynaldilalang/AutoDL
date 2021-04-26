@@ -24,7 +24,7 @@ import torch.multiprocessing
 from torch.multiprocessing import Pool
 from torch.multiprocessing import Process
 
-from Models import *
+from models import *
 
 
 class HyperBandTorchSearchCV:
@@ -74,7 +74,7 @@ class HyperBandTorchSearchCV:
     """
     def __init__(self, estimator, search_spaces,
                  scoring, max_epochs, factor=3,
-                 cv=1, random_state=420, greater_is_better=True,
+                 cv=3, random_state=420, greater_is_better=True,
                  n_jobs=1, device='cpu', gpu_ids=None):
         self.estimator = estimator
         self.search_spaces = search_spaces
@@ -360,13 +360,13 @@ class HyperBandTorchSearchCV:
         return model
 
     @staticmethod
-    def get_top_k(bracket_round, k):
+    def get_top_k(leaderboard, k):
         """
         Gets the top k configurations in one round of a bracket
 
         Parameters
         ----------
-        bracket_round : dict
+        leaderboard : dict
             Dictionary of all configurations in one round of a bracket,
             together with their scores
 
@@ -378,7 +378,7 @@ class HyperBandTorchSearchCV:
         model : callable.
             Callable object with method `fit`
         """
-        configurations = pd.DataFrame.from_dict(bracket_round, orient='index')
+        configurations = pd.DataFrame.from_dict(leaderboard, orient='index')
         configurations = configurations.sort_values(
             ['score'], ascending=False).reset_index(drop=True).head(k)
         configurations = configurations.to_dict(orient='index')

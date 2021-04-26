@@ -65,7 +65,7 @@ def get_score(estimator, X_train, y_train, X_test, y_test, scoring, verbose):
     return score
 
 
-def cross_val_score_torch(estimator, X, y, scoring, cv=1, n_jobs=1, verbose=0):
+def cross_val_score_torch(estimator, X, y, scoring, cv=3, n_jobs=1, verbose=0):
     kf = KFold(n_splits=cv)
     kf.get_n_splits(X)
     score_test = []
