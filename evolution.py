@@ -21,17 +21,26 @@ from itertools import chain
 
 import multiprocessing
 import torch.multiprocessing
-from torch.multiprocessing import Pool
-from torch.multiprocessing import Process
+from torch.multiprocessing import Pool, Process, Queue
 
 from models import *
+
+import logging
+import sys
+import warnings
+warnings.filterwarnings("ignore")
+
+### ONLY IN py ###
+cwd = os.getcwd()
+logging.basicConfig(filename=f'{cwd}\\log\\log.log', level=logging.INFO, filemode='a',
+                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 
 class GATorchSearchCV:
     def __init__(self, estimator, search_spaces, scoring, max_epochs, population_size,                 
                  crossover_rate=0.5, mutation_rate=0.01, n_generations=10,
                  cv=3, random_state=420, greater_is_better=True,
-                 n_jobs=1, device='cpu', gpu_ids=None):
+                 n_jobs_model=1, n_jobs_cv=1, device='cpu', gpu_ids=None):
         self.estimator = estimator
         self.search_spaces = search_spaces
         self.scoring = scoring
@@ -44,17 +53,18 @@ class GATorchSearchCV:
         self.random_state = random_state
         self.greater_is_better = greater_is_better
 
-        self.n_jobs = n_jobs
+        self.n_jobs_model = n_jobs_model
+        self.n_jobs_cv = n_jobs_cv
         self.device = device
 
         available_cudas = torch.cuda.device_count()
         if available_cudas == 0 and device == 'cuda':
             self.device = 'cpu'
             n_gpu = 0
-            print(f'WARNING: No cuda devices are found, using cpu instead')
+            logging.warning(f'WARNING: No cuda devices are found, using cpu instead')
         elif available_cudas < len(gpu_ids):
             n_gpu = available_cudas
-            print(f'WARNING: Only {available_cudas} cuda devices are found')
+            logging.warning(f'WARNING: Only {available_cudas} cuda devices are found')
         else:
             n_gpu = len(gpu_ids)
 
@@ -64,14 +74,19 @@ class GATorchSearchCV:
         else:
             self.n_device = 1
 
-        print(
+        logging.info(
             f'Initializing Torch HyperBand Search using {self.n_device} {self.device} devices')
 
     @staticmethod
     def get_mean_cv_score(model, X, y, scoring, cv, n_jobs, verbose, model_id=None):
+        start = time.time()
         if model_id != None:
-            print(f'CV on model {model_id}')
+            logging.info(f'Starting CV on model {model_id}')
         mean_cv_score = cross_val_score_torch(model, X, y, scoring, cv, n_jobs, verbose).mean()
+        end = time.time()
+        process_time = pd.Timedelta(end-start, unit="s")
+        if model_id != None:
+            logging.info(f'Finished CV on model {model_id} in {process_time}')
         return mean_cv_score
 
     @staticmethod
@@ -113,7 +128,7 @@ class GATorchSearchCV:
                     num_hidden_layer = int(distribution.rvs(
                         layers_hparam['num_hidden_layer'][0], layers_hparam['num_hidden_layer'][1]-layers_hparam['num_hidden_layer'][0]))
                 except NameError:
-                    print(
+                    logging.warning(
                         f'WARNING: Distribution {layers_hparam["num_hidden_layer"][2]} not found, generating random number uniformly.')
                     num_hidden_layer = randint.rvs(
                         layers_hparam['num_hidden_layer'][0], layers_hparam['num_hidden_layer'][1]+1)
@@ -128,7 +143,7 @@ class GATorchSearchCV:
                     configuration[ind]['hparams']['list_hidden_layer'] = distribution.rvs(
                         layers_hparam['num_neuron'][0], layers_hparam['num_neuron'][1]-layers_hparam['num_neuron'][0], size=num_hidden_layer).astype(int).tolist()
                 except NameError:
-                    print(
+                    logging.warning(
                         f'WARNING: Distribution {layers_hparam["num_neuron"][2]} not found, generating random number uniformly.')
                     configuration[ind]['hparams']['list_hidden_layer'] = randint.rvs(
                         layers_hparam['num_neuron'][0], layers_hparam['num_neuron'][1]+1, size=num_hidden_layer).tolist()
@@ -155,7 +170,7 @@ class GATorchSearchCV:
                                 configuration[ind]['hparams'][hparam] = distribution.rvs(
                                     num_hparam[hparam][0], num_hparam[hparam][1]-num_hparam[hparam][0])
                         except NameError:
-                            print(
+                            logging.warning(
                                 f'WARNING: Distribution {num_hparam[hparam][2]} not found, generating random number uniformly.')
                             if (type(num_hparam[hparam][0]) == int) and (type(num_hparam[hparam][1]) == int):
                                 configuration[ind]['hparams'][hparam] = randint.rvs(
@@ -211,7 +226,7 @@ class GATorchSearchCV:
                             self.population[gen_num][pair]['hparams']['list_hidden_layer'][layer_num] = int(distribution.rvs(
                                 layers_hparam['num_neuron'][0], layers_hparam['num_neuron'][1]-layers_hparam['num_neuron'][0]))
                         except NameError:
-                            print(
+                            logging.warning(
                                 f'WARNING: Distribution {layers_hparam["num_neuron"][2]} not found, generating random number uniformly.')
                             self.population[gen_num][pair]['hparams']['list_hidden_layer'][layer_num] = randint.rvs(
                                 layers_hparam['num_neuron'][0], layers_hparam['num_neuron'][1]+1)
@@ -238,7 +253,7 @@ class GATorchSearchCV:
                                 self.population[gen_num][pair]['hparams'][hparam] = distribution.rvs(
                                     num_hparam[hparam][0], num_hparam[hparam][1]-num_hparam[hparam][0])
                         except NameError:
-                            print(
+                            logging.warning(
                                 f'WARNING: Distribution {num_hparam[hparam][2]} not found, generating random number uniformly.')
                             if (type(num_hparam[hparam][0]) == int) and (type(num_hparam[hparam][1]) == int):
                                 self.population[gen_num][pair]['hparams'][hparam] = randint.rvs(
@@ -254,7 +269,7 @@ class GATorchSearchCV:
                             self.population[gen_num][pair]['hparams'][hparam] = uniform.rvs(
                                 num_hparam[hparam][0], num_hparam[hparam][1]-num_hparam[hparam][0])
 
-        self._fit_multiple(X, y, gen_num)
+        self._fit_generation(X, y, gen_num)
 
     @staticmethod
     def create_model(model_name, random_state, epoch, device, **hparams):
@@ -280,17 +295,29 @@ class GATorchSearchCV:
 
         return pairs
 
-    def _fit_multiple(self, X, y, gen_num):
-        print(f'Fitting models for generation {gen_num}')
+    def _fit_multiple(self, queue):
+        list_model = queue.get()
+        torch.multiprocessing.set_start_method('spawn', force=True)
+        with MyPool(self.n_jobs_model) as p:
+            list_score = p.starmap(self.get_mean_cv_score, list_model)
+        queue.put(list_score)
 
-        list_toTrain_model = []
+    def _fit_generation(self, X, y, gen_num):
+        start = time.time()
+        logging.info(f'Fitting models for generation {gen_num}')
 
+        dict_toTrain_model_by_device = {device_num: [] for device_num in range(self.n_device)}
+        dict_toTrain_score_by_device = {device_num: [] for device_num in range(self.n_device)}
+        dict_toTrain_idx_by_device = {device_num: [] for device_num in range(self.n_device)}
         trained_idx = 0
         for chromosome in range(self.population_size):
             device_used = self.device
             if not self.population[gen_num][chromosome]['isTrained']:
                 if device_used == 'cuda':
-                    device_used += f':{self.gpu_ids[trained_idx % self.n_device]}'
+                    device_num = self.gpu_ids[trained_idx % self.n_device]
+                    device_used += f':{device_num}'
+                else:
+                    device_num = 0
                 model = self.create_model(
                     self.estimator,
                     random_state=self.random_state,
@@ -299,27 +326,59 @@ class GATorchSearchCV:
                     **self.population[gen_num][chromosome]['hparams']
                 )
                 verbose = 0
-                list_toTrain_model.append(
-                    (model, X, y, self.scoring, self.cv, self.cv, verbose, chromosome))
+                dict_toTrain_model_by_device[device_num].append(
+                    (model, X, y, self.scoring, self.cv, self.n_jobs_cv, verbose, chromosome))
+                dict_toTrain_idx_by_device[device_num].append(chromosome)
                 trained_idx += 1
 
-        torch.multiprocessing.set_start_method('spawn', force=True)
-        with MyPool(self.n_device * self.n_jobs) as p:
-            list_toTrain_score = p.starmap(
-                self.get_mean_cv_score, list_toTrain_model)
+        num_trained = trained_idx
+        processes = []
+        queues = []
+        for device_num in range(self.n_device):
+            q = Queue()
+            q.put(dict_toTrain_model_by_device[device_num])
+            p = Process(
+                target=self._fit_multiple,
+                args=(q, )
+            )
+            processes.append(p)
+            queues.append(q)
+            p.start()
 
-        trained_idx = 0
-        for chromosome in range(self.population_size):
-            if not self.population[gen_num][chromosome]['isTrained']:
-                self.population[gen_num][chromosome]['score'] = list_toTrain_score[trained_idx]
-                self.population[gen_num][chromosome]['isTrained'] = True
-                trained_idx += 1
+        for process in processes:
+            process.join()
+
+        for device_num in range(self.n_device):
+            dict_toTrain_score_by_device[device_num] = queues[device_num].get()
+
+        list_toTrain_model_by_device = [
+            dict_toTrain_model_by_device[device_num] for device_num in range(self.n_device)
+        ]
+        list_toTrain_score_by_device = [
+            dict_toTrain_score_by_device[device_num] for device_num in range(self.n_device)
+        ]
+
+        for trained_idx in range(num_trained):
+            device_used = self.device
+            if device_used == 'cuda':
+                device_num = self.gpu_ids[trained_idx % self.n_device]
+                device_used += f':{device_num}'
+            else:
+                device_num = 0
+            chromosome = list_toTrain_model_by_device[device_num].pop(0)[-1]
+            self.population[gen_num][chromosome]['score'] = list_toTrain_score_by_device[device_num].pop(0)
+            self.population[gen_num][chromosome]['isTrained'] = True
         
         best_config_by_gen = self.get_top_k(self.population[gen_num], 1)[0]
         self.list_best_config.append({'gen': gen_num, **best_config_by_gen})
 
+        end = time.time()
+        process_time = pd.Timedelta(end-start, unit="s")
+        logging.info(f'Finished fitting models for generation {gen_num} in {process_time}')
+
     def fit(self, X, y):
-        print(f'Genetic Algorithm on {self.estimator} \n')
+        start = time.time()
+        logging.info(f'Genetic Algorithm on {self.estimator} \n')
         cat_hparam, num_hparam, layers_hparam, combinations = self.create_combinations(
             self.search_spaces
         )
@@ -329,16 +388,19 @@ class GATorchSearchCV:
         )
         
         self.list_best_config = []
-        self._fit_multiple(X, y, 0)
+        self._fit_generation(X, y, 0)
         for gen_num in range(1, self.n_generations + 1):
             self._run_generation(X, y, gen_num, cat_hparam, num_hparam, layers_hparam, combinations)
 
         best_config = pd.DataFrame(self.list_best_config).drop(columns=['isTrained'])
-        print(best_config)
         best_config = best_config.sort_values(
             ['score'], ascending=not self.greater_is_better).reset_index(drop=True)
 
         self.best_config = best_config
+
+        end = time.time()
+        process_time = pd.Timedelta(end-start, unit="s")
+        logging.info(f'\nFinished Genetic Algorithm on {self.estimator} in {process_time}')
 
     @property
     def best_params_(self):

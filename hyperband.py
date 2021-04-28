@@ -26,6 +26,17 @@ from torch.multiprocessing import Process
 
 from models import *
 
+import os
+import logging
+import sys
+import warnings
+warnings.filterwarnings("ignore")
+
+### ONLY IN py ###
+cwd = os.getcwd()
+logging.basicConfig(filename=f'{cwd}\\log\\log.log', level=logging.INFO, filemode='a',
+                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
 
 class HyperBandTorchSearchCV:
     """
@@ -75,7 +86,7 @@ class HyperBandTorchSearchCV:
     def __init__(self, estimator, search_spaces,
                  scoring, max_epochs, factor=3,
                  cv=3, random_state=420, greater_is_better=True,
-                 n_jobs=1, device='cpu', gpu_ids=None):
+                 n_jobs_model=1, n_jobs_cv=1, device='cpu', gpu_ids=None):
         self.estimator = estimator
         self.search_spaces = search_spaces
         self.scoring = scoring
@@ -87,17 +98,18 @@ class HyperBandTorchSearchCV:
         self.max_rounds = math.floor(math.log(max_epochs, factor))
         self.total_epochs = (self.max_rounds + 1) * max_epochs
 
-        self.n_jobs = n_jobs
+        self.n_jobs_model = n_jobs_model
+        self.n_jobs_cv = n_jobs_cv
         self.device = device
 
         available_cudas = torch.cuda.device_count()
         if available_cudas == 0 and device == 'cuda':
             self.device = 'cpu'
             n_gpu = 0
-            print(f'WARNING: No cuda devices are found, using cpu instead')
+            logging.warning(f'WARNING: No cuda devices are found, using cpu instead')
         elif available_cudas < len(gpu_ids):
             n_gpu = available_cudas
-            print(f'WARNING: Only {available_cudas} cuda devices are found')
+            logging.warning(f'WARNING: Only {available_cudas} cuda devices are found')
         else:
             n_gpu = len(gpu_ids)
 
@@ -107,7 +119,7 @@ class HyperBandTorchSearchCV:
         else:
             self.n_device = 1
 
-        print(
+        logging.info(
             f'Initializing Torch HyperBand Search using {self.n_device} {self.device} devices')
 
     @staticmethod
@@ -230,7 +242,7 @@ class HyperBandTorchSearchCV:
                     num_hidden_layer = int(distribution.rvs(
                         layers_hparam['num_hidden_layer'][0], layers_hparam['num_hidden_layer'][1]-layers_hparam['num_hidden_layer'][0]))
                 except NameError:
-                    print(
+                    logging.warning(
                         f'WARNING: Distribution {layers_hparam["num_hidden_layer"][2]} not found, generating random number uniformly.')
                     num_hidden_layer = randint.rvs(
                         layers_hparam['num_hidden_layer'][0], layers_hparam['num_hidden_layer'][1]+1)
@@ -245,7 +257,7 @@ class HyperBandTorchSearchCV:
                     configuration[ind]['hparams']['list_hidden_layer'] = distribution.rvs(
                         layers_hparam['num_neuron'][0], layers_hparam['num_neuron'][1]-layers_hparam['num_neuron'][0], size=num_hidden_layer).astype(int).tolist()
                 except NameError:
-                    print(
+                    logging.warning(
                         f'WARNING: Distribution {layers_hparam["num_neuron"][2]} not found, generating random number uniformly.')
                     configuration[ind]['hparams']['list_hidden_layer'] = randint.rvs(
                         layers_hparam['num_neuron'][0], layers_hparam['num_neuron'][1]+1, size=num_hidden_layer).tolist()
@@ -272,7 +284,7 @@ class HyperBandTorchSearchCV:
                                 configuration[ind]['hparams'][hparam] = distribution.rvs(
                                     num_hparam[hparam][0], num_hparam[hparam][1]-num_hparam[hparam][0])
                         except NameError:
-                            print(
+                            logging.warning(
                                 f'WARNING: Distribution {num_hparam[hparam][2]} not found, generating random number uniformly.')
                             if (type(num_hparam[hparam][0]) == int) and (type(num_hparam[hparam][1]) == int):
                                 configuration[ind]['hparams'][hparam] = randint.rvs(
@@ -320,8 +332,8 @@ class HyperBandTorchSearchCV:
 
             bracket_df = pd.DataFrame.from_dict(
                 brackets[bracket_num], orient='index')[['ni', 'ri']]
-            print(f'Bracket {bracket_num} setup:')
-            print(bracket_df.rename(
+            logging.info(f'Bracket {bracket_num} setup:')
+            logging.info(bracket_df.rename(
                 columns={'ni': 'Number of Configurations', 'ri': 'Resource'}), '\n')
 
         self.brackets = brackets
@@ -424,10 +436,10 @@ class HyperBandTorchSearchCV:
                 )
                 verbose = 0
                 list_toTrain_model.append(
-                    (model, X, y, self.scoring, self.cv, self.cv, verbose))
+                    (model, X, y, self.scoring, self.cv, self.n_jobs_cv, verbose))
 
             torch.multiprocessing.set_start_method('spawn', force=True)
-            with MyPool(self.n_jobs) as p:
+            with MyPool(self.n_jobs_model) as p:
                 list_toTrain_score = p.starmap(
                     self.get_mean_cv_score, list_toTrain_model)
 
@@ -462,7 +474,8 @@ class HyperBandTorchSearchCV:
         best_config : pandas.DataFrame.
             Dataframe which list all the best configurations from each round of each bracket
         """
-        print(f'HyperBand on {self.estimator} \n')
+        start = time.time()
+        logging.info(f'HyperBand on {self.estimator} \n')
         self._create_brackets()
         cat_hparam, num_hparam, layers_hparam, combinations = self.create_combinations(
             self.search_spaces)
@@ -486,6 +499,9 @@ class HyperBandTorchSearchCV:
             ['score'], ascending=not self.greater_is_better).reset_index(drop=True)
 
         self.best_config = best_config
+        end = time.time()
+        process_time = pd.Timedelta(end-start, unit="s")
+        logging.info(f'\nFinished Genetic Algorithm on {self.estimator} in {process_time}')
 
     @property
     def best_params_(self):

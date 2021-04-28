@@ -10,8 +10,16 @@ import pandas as pd
 import numpy as np
 
 from tqdm import tqdm
+
+import logging
+import sys
 import warnings
 warnings.filterwarnings("ignore")
+
+### ONLY IN py ###
+cwd = os.getcwd()
+logging.basicConfig(filename=f'{cwd}\\log\\log.log', level=logging.INFO, filemode='a',
+                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 
 class MLPClassifier(nn.Module):

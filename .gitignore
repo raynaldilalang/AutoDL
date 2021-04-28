@@ -5,4 +5,5 @@ catboost_info
 *hasil_test*
 test/
 **/*.pkl
+**/log
 # **/*.csv
