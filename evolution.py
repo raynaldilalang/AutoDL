@@ -30,17 +30,17 @@ import sys
 import warnings
 warnings.filterwarnings("ignore")
 
-### ONLY IN py ###
-cwd = os.getcwd()
-logging.basicConfig(filename=f'{cwd}\\log\\log.log', level=logging.INFO, filemode='a',
-                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-
 class GATorchSearchCV:
     def __init__(self, estimator, search_spaces, scoring, max_epochs, population_size,                 
                  crossover_rate=0.5, mutation_rate=0.01, n_generations=10,
                  cv=3, random_state=420, greater_is_better=True,
-                 n_jobs_model=1, n_jobs_cv=1, device='cpu', gpu_ids=None):
+                 n_jobs_model=1, n_jobs_cv=1, device='cpu', gpu_ids=None,
+                 log_path='./'):
+        self.log_path = log_path
+        logging.basicConfig(
+            filename=self.log_path, level=logging.INFO, filemode='a',
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
         self.estimator = estimator
         self.search_spaces = search_spaces
         self.scoring = scoring
