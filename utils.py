@@ -9,6 +9,7 @@ import numpy as np
 from sklearn.model_selection import KFold
 from sklearn.metrics import *
 
+from itertools import chain
 import multiprocessing
 import torch.multiprocessing
 from torch.multiprocessing import Pool
@@ -81,3 +82,9 @@ def cross_val_score_torch(estimator, X, y, scoring, cv=3, n_jobs=1, verbose=0):
         score_test = p.starmap(get_score, listToTrain)
 
     return np.array(score_test)
+
+def unnest(old_list, repeat=1):
+    new_list = old_list.copy()
+    for i in range(repeat):
+        new_list = list(chain.from_iterable(new_list))
+    return new_list

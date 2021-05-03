@@ -16,12 +16,6 @@ import sys
 import warnings
 warnings.filterwarnings("ignore")
 
-### ONLY IN py ###
-cwd = os.getcwd()
-logging.basicConfig(filename=f'{cwd}\\log\\log.log', level=logging.INFO, filemode='a',
-                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-
 class MLPClassifier(nn.Module):
     """
     Multi Layer Perceptron model for basic classification tasks.
@@ -80,11 +74,17 @@ class MLPClassifier(nn.Module):
     def __init__(self, list_hidden_layer, input_size, output_size, batch_size, epoch,
                  activation='ReLU', optimizer='Adam', loss_function='BCELoss', lr=1e-3,
                  drop_rate=0, l1=0, l2=0, random_state=None,
-                 batch_norm=False, device='cpu'):
+                 batch_norm=False, device='cpu', log_path='./'):
         super().__init__()
 
         if type(random_state)==int:
             torch.manual_seed(random_state)
+
+        self.log_path = log_path
+        logging.basicConfig(
+            filename=self.log_path, level=logging.INFO, filemode='a',
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
 
         self.input_size = input_size
         self.list_layer = list_hidden_layer
@@ -221,6 +221,13 @@ class MLPClassifier(nn.Module):
         y : array-like.
             Array of target/ labels.
         """
+        if type(X) == np.ndarray:
+            X = X.copy()
+            X = torch.from_numpy(X).to(torch.float32).to(self.device)
+        if type(y) == np.ndarray:
+            y = y.copy()
+            y = torch.from_numpy(y).to(torch.float32).to(self.device)
+            
         dataset = TensorDataset(X, y)
         if verbose:
             # for epoch in tqdm(range(self.epoch)):
@@ -248,6 +255,7 @@ class MLPClassifier(nn.Module):
             Outputs / prediction results of the neural network
         """
         if type(X) == np.ndarray:
+            X = X.copy()
             X = torch.from_numpy(X).to(torch.float32).to(self.device)
         
         y_pred = self.layers(X)
@@ -340,12 +348,18 @@ class MLPRegressor(nn.Module):
     def __init__(self, list_hidden_layer, input_size, output_size, batch_size, epoch,
                  activation='ReLU', optimizer='Adam', loss_function='L1Loss', lr=1e-3,
                  drop_rate=0, l1=0, l2=0, random_state=None,
-                 batch_norm=False, device='cpu'):
+                 batch_norm=False, device='cpu', log_path='./'):
         super().__init__()
 
         if type(random_state) == int:
             torch.manual_seed(random_state)
         
+        self.log_path = log_path
+        logging.basicConfig(
+            filename=self.log_path, level=logging.INFO, filemode='a',
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
+
         self.input_size = input_size
         self.list_layer = list_hidden_layer
         self.output_size = output_size

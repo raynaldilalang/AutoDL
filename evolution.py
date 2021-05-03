@@ -25,22 +25,23 @@ from torch.multiprocessing import Pool, Process, Queue
 
 from models import *
 
+from copy import copy, deepcopy
 import logging
 import sys
 import warnings
 warnings.filterwarnings("ignore")
 
-### ONLY IN py ###
-cwd = os.getcwd()
-logging.basicConfig(filename=f'{cwd}\\log\\log.log', level=logging.INFO, filemode='a',
-                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-
 class GATorchSearchCV:
     def __init__(self, estimator, search_spaces, scoring, max_epochs, population_size,                 
                  crossover_rate=0.5, mutation_rate=0.01, n_generations=10,
                  cv=3, random_state=420, greater_is_better=True,
-                 n_jobs_model=1, n_jobs_cv=1, device='cpu', gpu_ids=None):
+                 n_jobs_model=1, n_jobs_cv=1, device='cpu', gpu_ids=None,
+                 log_path='./'):
+        self.log_path = log_path
+        logging.basicConfig(
+            filename=self.log_path, level=logging.INFO, filemode='a',
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
         self.estimator = estimator
         self.search_spaces = search_spaces
         self.scoring = scoring
@@ -75,7 +76,7 @@ class GATorchSearchCV:
             self.n_device = 1
 
         logging.info(
-            f'Initializing Torch HyperBand Search using {self.n_device} {self.device} devices')
+            f'Initializing Torch GA Search using {self.n_device} {self.device} devices')
 
     @staticmethod
     def get_mean_cv_score(model, X, y, scoring, cv, n_jobs, verbose, model_id=None):
@@ -280,6 +281,7 @@ class GATorchSearchCV:
 
     @staticmethod
     def get_top_k(leaderboard, k):
+        leaderboard = leaderboard.copy()
         configurations = pd.DataFrame.from_dict(leaderboard, orient='index')
         configurations = configurations.sort_values(
             ['score'], ascending=False).reset_index(drop=True).head(k)
@@ -369,7 +371,9 @@ class GATorchSearchCV:
             self.population[gen_num][chromosome]['score'] = list_toTrain_score_by_device[device_num].pop(0)
             self.population[gen_num][chromosome]['isTrained'] = True
         
-        best_config_by_gen = self.get_top_k(self.population[gen_num], 1)[0]
+        leaderboard = deepcopy(self.population[gen_num])
+        best_config_by_gen = self.get_top_k(leaderboard, 1)[0]
+        best_config_by_gen['hparams'].update({'epoch': self.max_epochs})
         self.list_best_config.append({'gen': gen_num, **best_config_by_gen})
 
         end = time.time()
@@ -386,7 +390,6 @@ class GATorchSearchCV:
         self.population[0] = self.get_hyperparameter_configuration(
             cat_hparam, num_hparam, layers_hparam, combinations, self.population_size
         )
-        
         self.list_best_config = []
         self._fit_generation(X, y, 0)
         for gen_num in range(1, self.n_generations + 1):
@@ -400,7 +403,7 @@ class GATorchSearchCV:
 
         end = time.time()
         process_time = pd.Timedelta(end-start, unit="s")
-        logging.info(f'\nFinished Genetic Algorithm on {self.estimator} in {process_time}')
+        logging.info(f'Finished Genetic Algorithm on {self.estimator} in {process_time}')
 
     @property
     def best_params_(self):

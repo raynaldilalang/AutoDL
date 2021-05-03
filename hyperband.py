@@ -21,8 +21,7 @@ from itertools import chain
 
 import multiprocessing
 import torch.multiprocessing
-from torch.multiprocessing import Pool
-from torch.multiprocessing import Process
+from torch.multiprocessing import Pool, Process, Queue
 
 from models import *
 
@@ -31,12 +30,6 @@ import logging
 import sys
 import warnings
 warnings.filterwarnings("ignore")
-
-### ONLY IN py ###
-cwd = os.getcwd()
-logging.basicConfig(filename=f'{cwd}\\log\\log.log', level=logging.INFO, filemode='a',
-                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
 
 class HyperBandTorchSearchCV:
     """
@@ -86,7 +79,13 @@ class HyperBandTorchSearchCV:
     def __init__(self, estimator, search_spaces,
                  scoring, max_epochs, factor=3,
                  cv=3, random_state=420, greater_is_better=True,
-                 n_jobs_model=1, n_jobs_cv=1, device='cpu', gpu_ids=None):
+                 n_jobs_model=1, n_jobs_cv=1, device='cpu', gpu_ids=None,
+                 log_path='./log.log'):
+        self.log_path = log_path
+        logging.basicConfig(
+            filename=self.log_path, level=logging.INFO, filemode='a',
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
         self.estimator = estimator
         self.search_spaces = search_spaces
         self.scoring = scoring
@@ -334,12 +333,12 @@ class HyperBandTorchSearchCV:
                 brackets[bracket_num], orient='index')[['ni', 'ri']]
             logging.info(f'Bracket {bracket_num} setup:')
             logging.info(bracket_df.rename(
-                columns={'ni': 'Number of Configurations', 'ri': 'Resource'}), '\n')
+                columns={'ni': 'Number of Configurations', 'ri': 'Resource'}))
 
         self.brackets = brackets
 
     @staticmethod
-    def create_model(model_name, random_state, epoch, device, **hparams):
+    def create_model(model_name, random_state, epoch, device, log_path, **hparams):
         """
         Initiate a model object
 
@@ -367,7 +366,9 @@ class HyperBandTorchSearchCV:
             Callable object with method `fit`
         """
         model = eval(f'{model_name}')(
-            **hparams, epoch=int(epoch), random_state=random_state, device=device)
+            **hparams, epoch=int(epoch), random_state=random_state, device=device,
+            log_path=log_path
+        )
 
         return model
 
@@ -432,6 +433,7 @@ class HyperBandTorchSearchCV:
                     random_state=self.random_state,
                     epoch=self.brackets[bracket_num][i]['ri'],
                     device=device_used,
+                    log_path=self.log_path,
                     **configurations[contender]['hparams']
                 )
                 verbose = 0
@@ -452,10 +454,25 @@ class HyperBandTorchSearchCV:
                     self.brackets[bracket_num][i]['ni']/self.factor), 1)
             )
 
-            best_config_by_round.append(
-                {'bracket': bracket_num, 'round': i, 'epoch': self.brackets[bracket_num][i]['ri'], **configurations[0]})
+            best_config = configurations[0].copy()
+            best_config_by_round.append({
+                'bracket': bracket_num,
+                'round': i,
+                'epoch': int(self.brackets[bracket_num][i]['ri']),
+                **best_config
+            })
 
         return best_config_by_round
+
+    def _fit_in_pool(self, queue):
+        X, y, configurations, list_bracket_num = queue.get()
+        torch.multiprocessing.set_start_method('spawn', force=True)
+        with MyPool(1) as p:
+            list_best_config = p.starmap(self._fit_multiple, [(
+                X, y, configurations[bracket_num], bracket_num) for bracket_num in list_bracket_num
+        ])
+        queue.put(list_best_config)
+        
 
     def fit(self, X, y):
         """
@@ -480,28 +497,56 @@ class HyperBandTorchSearchCV:
         cat_hparam, num_hparam, layers_hparam, combinations = self.create_combinations(
             self.search_spaces)
         configurations = dict.fromkeys(range(self.max_rounds + 1))
-        processes = []
+        dict_bracket_by_device = {device_num: [] for device_num in range(self.n_device)}
+        dict_best_config_by_device = {device_num: [] for device_num in range(self.n_device)}
+
         for bracket_num in range(self.max_rounds, -1, -1):
+            device_used = self.device
+            if device_used == 'cuda':
+                device_num = self.gpu_ids[bracket_num % self.n_device]
+                device_used += f':{device_num}'
+            else:
+                device_num = 0
             n = math.ceil(
                 (self.total_epochs/self.max_epochs) *
                 (self.factor**bracket_num/(bracket_num+1))
             )
             configurations[bracket_num] = self.get_hyperparameter_configuration(
                 cat_hparam, num_hparam, layers_hparam, combinations, n)
+            dict_bracket_by_device[device_num].append(bracket_num)
+            
+        processes = []
+        queues = []
+        for device_num in range(self.n_device):
+            q = Queue()
+            q.put((X, y, configurations, dict_bracket_by_device[device_num]))
+            p = Process(
+                target=self._fit_in_pool,
+                args=(q, )
+            )
+            processes.append(p)
+            queues.append(q)
+            p.start()
 
-        torch.multiprocessing.set_start_method('spawn', force=True)
-        with MyPool(self.n_device) as p:
-            list_best_config = p.starmap(self._fit_multiple, [(
-                X, y, configurations[bracket_num], bracket_num) for bracket_num in range(self.max_rounds, -1, -1)])
+        for process in processes:
+            process.join()
 
-        best_config = pd.DataFrame(list(chain.from_iterable(list_best_config)))
+        for device_num in range(self.n_device):
+            dict_best_config_by_device[device_num] = queues[device_num].get()
+
+        list_best_config = [
+            dict_best_config_by_device[device_num] for device_num in range(self.n_device)
+        ]
+        list_best_config = unnest(list_best_config, repeat=2)
+
+        best_config = pd.DataFrame(list_best_config)
         best_config = best_config.sort_values(
             ['score'], ascending=not self.greater_is_better).reset_index(drop=True)
 
         self.best_config = best_config
         end = time.time()
         process_time = pd.Timedelta(end-start, unit="s")
-        logging.info(f'\nFinished Genetic Algorithm on {self.estimator} in {process_time}')
+        logging.info(f'Finished Genetic Algorithm on {self.estimator} in {process_time}')
 
     @property
     def best_params_(self):
