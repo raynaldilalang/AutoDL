@@ -25,6 +25,7 @@ from torch.multiprocessing import Pool, Process, Queue
 
 from models import *
 
+from copy import copy, deepcopy
 import logging
 import sys
 import warnings
@@ -75,7 +76,7 @@ class GATorchSearchCV:
             self.n_device = 1
 
         logging.info(
-            f'Initializing Torch HyperBand Search using {self.n_device} {self.device} devices')
+            f'Initializing Torch GA Search using {self.n_device} {self.device} devices')
 
     @staticmethod
     def get_mean_cv_score(model, X, y, scoring, cv, n_jobs, verbose, model_id=None):
@@ -280,6 +281,7 @@ class GATorchSearchCV:
 
     @staticmethod
     def get_top_k(leaderboard, k):
+        leaderboard = leaderboard.copy()
         configurations = pd.DataFrame.from_dict(leaderboard, orient='index')
         configurations = configurations.sort_values(
             ['score'], ascending=False).reset_index(drop=True).head(k)
@@ -369,7 +371,9 @@ class GATorchSearchCV:
             self.population[gen_num][chromosome]['score'] = list_toTrain_score_by_device[device_num].pop(0)
             self.population[gen_num][chromosome]['isTrained'] = True
         
-        best_config_by_gen = self.get_top_k(self.population[gen_num], 1)[0]
+        leaderboard = deepcopy(self.population[gen_num])
+        best_config_by_gen = self.get_top_k(leaderboard, 1)[0]
+        best_config_by_gen['hparams'].update({'epoch': self.max_epochs})
         self.list_best_config.append({'gen': gen_num, **best_config_by_gen})
 
         end = time.time()
@@ -386,7 +390,6 @@ class GATorchSearchCV:
         self.population[0] = self.get_hyperparameter_configuration(
             cat_hparam, num_hparam, layers_hparam, combinations, self.population_size
         )
-        
         self.list_best_config = []
         self._fit_generation(X, y, 0)
         for gen_num in range(1, self.n_generations + 1):
@@ -400,7 +403,7 @@ class GATorchSearchCV:
 
         end = time.time()
         process_time = pd.Timedelta(end-start, unit="s")
-        logging.info(f'\nFinished Genetic Algorithm on {self.estimator} in {process_time}')
+        logging.info(f'Finished Genetic Algorithm on {self.estimator} in {process_time}')
 
     @property
     def best_params_(self):

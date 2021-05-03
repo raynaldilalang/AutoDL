@@ -221,6 +221,13 @@ class MLPClassifier(nn.Module):
         y : array-like.
             Array of target/ labels.
         """
+        if type(X) == np.ndarray:
+            X = X.copy()
+            X = torch.from_numpy(X).to(torch.float32).to(self.device)
+        if type(y) == np.ndarray:
+            y = y.copy()
+            y = torch.from_numpy(y).to(torch.float32).to(self.device)
+            
         dataset = TensorDataset(X, y)
         if verbose:
             # for epoch in tqdm(range(self.epoch)):
@@ -248,6 +255,7 @@ class MLPClassifier(nn.Module):
             Outputs / prediction results of the neural network
         """
         if type(X) == np.ndarray:
+            X = X.copy()
             X = torch.from_numpy(X).to(torch.float32).to(self.device)
         
         y_pred = self.layers(X)

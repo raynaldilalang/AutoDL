@@ -46,7 +46,6 @@ class AutoDL:
             }
         else:
             self.method_dict = method_dict
-            # self.method_dict.update({'device': self.device, 'gpu_ids': self.gpu_ids})
 
 
     def fit(self, X, y):
@@ -68,12 +67,16 @@ class AutoDL:
 
         self.best_score_ = self.dict_searchcv[self.methods[0]].best_score_
         self.best_params_ = self.dict_searchcv[self.methods[0]].best_params_
+        self.best_method_ = self.methods[0]
         for search in self.dict_searchcv:
             if self.best_score_ < self.dict_searchcv[search].best_score_:
                 self.best_score_ = self.dict_searchcv[search].best_score_
                 self.best_params_ = self.dict_searchcv[search].best_params_
+                self.best_method_ = search
 
-        self.best_model_ = self.estimator(**best_params).fit(X, y)     
+        estimator_class = eval(self.estimator)
+        self.best_model_ = estimator_class(**self.best_params_)
+        self.best_model_.fit(X, y)     
 
     def predict(self, X):
         prediction = self.best_model_.predict(X)

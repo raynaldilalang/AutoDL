@@ -534,9 +534,6 @@ class HyperBandTorchSearchCV:
         for device_num in range(self.n_device):
             dict_best_config_by_device[device_num] = queues[device_num].get()
 
-        logging.info(dict_bracket_by_device)
-        logging.info(dict_best_config_by_device)
-
         list_best_config = [
             dict_best_config_by_device[device_num] for device_num in range(self.n_device)
         ]
@@ -549,7 +546,7 @@ class HyperBandTorchSearchCV:
         self.best_config = best_config
         end = time.time()
         process_time = pd.Timedelta(end-start, unit="s")
-        logging.info(f'\nFinished Genetic Algorithm on {self.estimator} in {process_time}')
+        logging.info(f'Finished Genetic Algorithm on {self.estimator} in {process_time}')
 
     @property
     def best_params_(self):
