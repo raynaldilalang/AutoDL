@@ -39,7 +39,7 @@ model.add(Dense(num_classes, activation='softmax'))
 
 # Configure the model and start training
 model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
-model.fit(X_train, Y_train, epochs=10, batch_size=10, verbose=1, validation_split=0.2)
+model.fit(X_train, Y_train, epochs=100, batch_size=250, verbose=1, validation_split=0.2)
 
 # Test the model after training
 test_results = model.evaluate(X_test, Y_test, verbose=1)
